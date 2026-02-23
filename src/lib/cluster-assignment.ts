@@ -254,7 +254,6 @@ export async function assignUserToCluster(
           }
           
           if (!hopsworksUserId && lastError) {
-            // Log failure but continue with assignment
             console.error('All attempts to create Hopsworks user failed:', lastError);
             await supabaseAdmin
               .from('health_check_failures')
@@ -265,6 +264,7 @@ export async function assignUserToCluster(
                 error_message: 'Failed to create Hopsworks user for team member after retries',
                 details: { error: String(lastError), cluster_id: ownerAssignment.hopsworks_cluster_id }
               });
+            return { success: false, error: 'Failed to create Hopsworks user for team member after retries' };
           }
         }
         
@@ -472,7 +472,6 @@ export async function assignUserToCluster(
         }
         
         if (!hopsworksUserId && lastError) {
-          // Log failure but continue with assignment
           console.error('All attempts to create Hopsworks user failed:', lastError);
           await supabaseAdmin
             .from('health_check_failures')
@@ -481,13 +480,14 @@ export async function assignUserToCluster(
               email: user.email,
               check_type: 'hopsworks_user_creation_owner',
               error_message: 'Failed to create Hopsworks user for account owner after retries',
-              details: { 
-                error: String(lastError), 
+              details: {
+                error: String(lastError),
                 cluster_id: availableCluster.id,
                 has_payment: !!user.stripe_customer_id,
                 is_prepaid: isPrepaid
               }
             });
+          return { success: false, error: 'Failed to create Hopsworks user for account owner after retries' };
         }
       }
       
