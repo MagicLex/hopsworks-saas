@@ -42,6 +42,7 @@ interface DailyStats {
   totalUsers: number;
   activeUsers: number;
   paidUsers: number;
+  onboardingUsers: number;
   freeUsers: number;
   prepaidUsers: number;
   teamMembers: number;
@@ -66,12 +67,13 @@ async function sendDailyDigest(stats: DailyStats, issues: IntegrityIssue[]) {
 *Users*
 • Total: *${stats.totalUsers}* (${stats.activeUsers} active)
 • Paid (postpaid): *${stats.paidUsers}*
+• Onboarding (no sub): *${stats.onboardingUsers}*
 • Free tier: *${stats.freeUsers}*
 • Prepaid/Corporate: *${stats.prepaidUsers}*
 • Team members: *${stats.teamMembers}*
 
 *Growth*
-• New today: *${stats.newUsersToday}*
+• New last 24h: *${stats.newUsersToday}*
 • New last 7d: *${stats.newUsers7d}*
 
 *Infrastructure*
@@ -312,7 +314,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // DAILY STATS for digest
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
@@ -330,7 +331,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .is('deleted_at', null)
     .gte('last_login_at', thirtyDaysAgo);
 
-  // Paid users (postpaid with subscription)
+  // Paid users (postpaid with active subscription)
   const { count: paidUsers } = await supabaseAdmin
     .from('users')
     .select('*', { count: 'exact', head: true })
@@ -338,6 +339,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .is('account_owner_id', null)
     .eq('billing_mode', 'postpaid')
     .not('stripe_subscription_id', 'is', null);
+
+  // Onboarding users (defaulted to postpaid but never completed payment setup)
+  const { count: onboardingUsers } = await supabaseAdmin
+    .from('users')
+    .select('*', { count: 'exact', head: true })
+    .is('deleted_at', null)
+    .is('account_owner_id', null)
+    .eq('billing_mode', 'postpaid')
+    .is('stripe_subscription_id', null);
 
   // Free tier users
   const { count: freeUsers } = await supabaseAdmin
@@ -362,16 +372,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .is('deleted_at', null)
     .not('account_owner_id', 'is', null);
 
-  // New users today
+  // New users in last 24h (rolling window so the 8 AM report captures yesterday's signups)
+  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
   const { count: newUsersToday } = await supabaseAdmin
     .from('users')
     .select('*', { count: 'exact', head: true })
-    .gte('created_at', todayStart);
+    .is('deleted_at', null)
+    .gte('created_at', twentyFourHoursAgo);
 
   // New users last 7 days
   const { count: newUsers7d } = await supabaseAdmin
     .from('users')
     .select('*', { count: 'exact', head: true })
+    .is('deleted_at', null)
     .gte('created_at', sevenDaysAgo);
 
   // Active clusters
@@ -380,18 +393,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .select('*', { count: 'exact', head: true })
     .eq('status', 'active');
 
-  // Total usage this month
-  const { data: usageData } = await supabaseAdmin
-    .from('usage_daily')
-    .select('total_cost')
-    .gte('date', monthStart.split('T')[0]);
+  // Total usage this month — use DB-side sum to avoid Supabase's 1000 row default limit
+  const { data: usageSum } = await supabaseAdmin
+    .rpc('sum_usage_this_month', { month_start: monthStart.split('T')[0] });
 
-  const totalUsageThisMonth = usageData?.reduce((sum, row) => sum + (row.total_cost || 0), 0) || 0;
+  const totalUsageThisMonth = usageSum ?? 0;
 
   const stats: DailyStats = {
     totalUsers: totalUsers || 0,
     activeUsers: activeUsers || 0,
     paidUsers: paidUsers || 0,
+    onboardingUsers: onboardingUsers || 0,
     freeUsers: freeUsers || 0,
     prepaidUsers: prepaidUsers || 0,
     teamMembers: teamMembers || 0,
