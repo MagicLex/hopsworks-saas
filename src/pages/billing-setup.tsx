@@ -101,11 +101,11 @@ export default function BillingSetup() {
   };
 
   const handleStartFree = async () => {
+    setSavingConsent(true);
+
     // If user hasn't accepted terms yet, save consent first
     if (needsTermsAcceptance) {
-      if (!termsAccepted) return; // Should not happen due to disabled button
-
-      setSavingConsent(true);
+      if (!termsAccepted) { setSavingConsent(false); return; } // Should not happen due to disabled button
       try {
         const response = await fetch('/api/user/accept-terms', {
           method: 'POST',
