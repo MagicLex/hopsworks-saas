@@ -147,6 +147,17 @@ export async function createHopsworksOAuthUser(
 
   if (!response.ok) {
     const errorBody = await response.text();
+
+    // 409 Conflict = user already exists (race condition from concurrent webhooks)
+    if (response.status === 409) {
+      console.log(`[Hopsworks API] User ${email} already exists on ${credentials.apiUrl} (409 Conflict), fetching existing user`);
+      const existingUser = await getHopsworksUserByEmail(credentials, email);
+      if (existingUser) {
+        return existingUser;
+      }
+      throw new Error(`Failed to create Hopsworks user ${email} on ${credentials.apiUrl}: 409 Conflict but could not fetch existing user`);
+    }
+
     console.error(`[Hopsworks API] OAuth user creation failed for ${email} on ${credentials.apiUrl}: ${response.status} ${response.statusText}`, errorBody);
 
     // Parse error message if available
