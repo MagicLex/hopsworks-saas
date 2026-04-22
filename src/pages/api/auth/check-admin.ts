@@ -20,11 +20,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('is_admin')
+      .select('is_admin, deleted_at')
       .eq('id', session.user.sub)
       .single();
 
-    if (error || !user) {
+    if (error || !user || user.deleted_at) {
       return res.status(200).json({ isAdmin: false });
     }
 
