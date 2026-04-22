@@ -101,6 +101,11 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       const response = await fetch('/api/billing');
+      if (response.status === 403) {
+        // Account soft-deleted server-side while session still valid — force logout.
+        window.location.href = '/api/auth/logout';
+        return;
+      }
       if (!response.ok) {
         throw new Error('Failed to fetch billing data');
       }
