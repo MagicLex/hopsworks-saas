@@ -178,7 +178,7 @@ export default function Dashboard() {
         // Team members don't need billing setup
         return;
       }
-      if (billing.isSuspended || !billing.termsAcceptedAt) {
+      if (billing.isSuspended || !billing.termsAcceptedAt || !billing.billingMode) {
         router.push('/billing-setup');
       }
     }
@@ -470,7 +470,7 @@ export default function Dashboard() {
                 <ClusterAccessStatus
                   hasCluster={hopsworksInfo?.hasCluster || false}
                   hasPaymentMethod={billing?.hasPaymentMethod || false}
-                  billingMode={billing?.billingMode}
+                  billingMode={billing?.billingMode ?? undefined}
                   clusterName={hopsworksInfo?.clusterName}
                   loading={hopsworksLoading || billingLoading || !billing || !hopsworksInfo}
                   reloadProgress={reloadProgress}

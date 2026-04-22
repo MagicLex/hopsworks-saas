@@ -133,6 +133,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.log(`Assigned free user ${userId} to cluster ${clusterResult.clusterId}`);
       } else {
         console.error(`Failed to assign free user ${userId}: ${clusterResult.error}`);
+        await supabaseAdmin
+          .from('health_check_failures')
+          .insert({
+            user_id: userId,
+            email: user.email,
+            check_type: 'cluster_assignment',
+            error_message: clusterResult.error || 'Failed to assign cluster in accept-terms',
+            details: { source: 'accept-terms', billing_mode: 'free' }
+          });
       }
     }
 

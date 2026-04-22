@@ -521,7 +521,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     return res.status(200).json({
-      billingMode: user?.billing_mode || 'free',
+      billingMode: user?.billing_mode ?? null,
       hasPaymentMethod,
       isSuspended: user?.status === 'suspended',
       termsAcceptedAt: user?.terms_accepted_at || null,
