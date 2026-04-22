@@ -1,7 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getSession, withApiAuthRequired } from '@auth0/nextjs-auth0';
+import { withApiAuthRequired } from '@auth0/nextjs-auth0';
 import { createClient } from '@supabase/supabase-js';
 import { deactivateUser } from '../../../lib/user-status';
+import { requireActiveSession } from '@/lib/require-active-session';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,10 +18,8 @@ export default withApiAuthRequired(async function handler(
   }
 
   try {
-    const session = await getSession(req, res);
-    if (!session?.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    const session = await requireActiveSession(req, res);
+    if (!session) return;
 
     const userId = session.user.sub;
     const { reason } = req.body || {};

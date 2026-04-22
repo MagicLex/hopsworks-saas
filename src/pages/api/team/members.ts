@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireActiveSession } from '@/lib/require-active-session';
 import { createClient } from '@supabase/supabase-js';
 import { getPostHogClient } from '@/lib/posthog-server';
 import { suspendUser } from '@/lib/user-status';
@@ -10,11 +10,8 @@ const supabase = createClient(
 );
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession(req, res);
-  
-  if (!session?.user) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  const session = await requireActiveSession(req, res);
+  if (!session) return;
 
   const userId = session.user.sub;
 

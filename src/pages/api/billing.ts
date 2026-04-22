@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { getSession } from '@auth0/nextjs-auth0';
 import { createClient } from '@supabase/supabase-js';
 import { DEFAULT_RATES } from '@/config/billing-rates';
 import { syncUserProjects } from '@/lib/project-sync';
+import { requireActiveSession } from '@/lib/require-active-session';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -21,10 +21,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
     );
-    const session = await getSession(req, res);
-    if (!session?.user) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
+    const session = await requireActiveSession(req, res);
+    if (!session) return;
 
     const userId = session.user.sub;
 
