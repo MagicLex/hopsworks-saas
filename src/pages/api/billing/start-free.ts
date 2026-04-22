@@ -104,6 +104,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!clusterResult.success && !clusterResult.clusterId) {
       console.error(`Failed to assign cluster for free user ${userId}:`, clusterResult.error);
+      await supabaseAdmin
+        .from('health_check_failures')
+        .insert({
+          user_id: userId,
+          email: user.email,
+          check_type: 'cluster_assignment',
+          error_message: clusterResult.error || 'Failed to assign cluster in start-free',
+          details: { source: 'start-free', billing_mode: 'free' }
+        });
       // Don't fail the request - user is now free, cluster will be assigned on next sync
     }
 
