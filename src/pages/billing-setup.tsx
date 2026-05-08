@@ -302,9 +302,15 @@ export default function BillingSetup() {
                     isLoading={savingConsent}
                     disabled={savingConsent || !termsAccepted}
                   >
-                    <Check size={18} />
-                    Continue to Dashboard
-                    <ArrowRight size={18} />
+                    {savingConsent ? (
+                      'Setting up your account...'
+                    ) : (
+                      <>
+                        <Check size={18} />
+                        Continue to Dashboard
+                        <ArrowRight size={18} />
+                      </>
+                    )}
                   </Button>
                 </Box>
               </>
@@ -429,11 +435,17 @@ export default function BillingSetup() {
                       className="w-full"
                       onClick={handleSetupPayment}
                       isLoading={loading}
-                      disabled={loading || (needsTermsAcceptance && !termsAccepted)}
+                      disabled={loading || savingConsent || (needsTermsAcceptance && !termsAccepted)}
                     >
-                      <CreditCard size={18} />
-                      Add Payment Method
-                      <ArrowRight size={18} />
+                      {loading ? (
+                        'Redirecting to Stripe...'
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          Add Payment Method
+                          <ArrowRight size={18} />
+                        </>
+                      )}
                     </Button>
 
                     <Box className="relative">
@@ -453,8 +465,14 @@ export default function BillingSetup() {
                       disabled={loading || savingConsent || (needsTermsAcceptance && !termsAccepted)}
                       isLoading={savingConsent}
                     >
-                      Start for Free
-                      <ArrowRight size={18} />
+                      {savingConsent ? (
+                        'Setting up your account...'
+                      ) : (
+                        <>
+                          Start for Free
+                          <ArrowRight size={18} />
+                        </>
+                      )}
                     </Button>
                     <Text className="text-sm text-gray-500 text-center">
                       1 project included, no credit card required
