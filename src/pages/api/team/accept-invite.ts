@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { hashInviteToken } from '@/lib/invite-token';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Invalid invite token' });
     }
 
-    // Get invite details
+    const tokenHash = hashInviteToken(token);
     const { data: invite, error: inviteError } = await supabase
       .from('team_invites')
       .select(`
@@ -29,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email
         )
       `)
-      .eq('token', token)
+      .eq('token_hash', tokenHash)
       .is('accepted_at', null)
       .single();
 

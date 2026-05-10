@@ -1,11 +1,21 @@
 import React from 'react';
-import { Zap, Terminal, User, Activity, Gift } from 'lucide-react';
-import { DeploymentOption } from '@/data/deployments';
-import { Modal, Button, Box, Flex, Title, Text, Labeling, Card } from 'tailwind-quartz';
-import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
-import { usePricing } from '@/contexts/PricingContext';
+import { Zap, Terminal, User, Activity, Gift } from 'lucide-react';
 import posthog from 'posthog-js';
+
+import { DeploymentOption } from '@/data/deployments';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext';
+import { usePricing } from '@/contexts/PricingContext';
+import { cn } from '@/lib/utils';
 
 interface DeployModalProps {
   isOpen: boolean;
@@ -15,7 +25,13 @@ interface DeployModalProps {
   promoCode?: string | null;
 }
 
-export const DeployModal: React.FC<DeployModalProps> = ({ isOpen, deployment, onClose, corporateRef, promoCode }) => {
+export const DeployModal: React.FC<DeployModalProps> = ({
+  isOpen,
+  deployment,
+  onClose,
+  corporateRef,
+  promoCode,
+}) => {
   const { user, signIn } = useAuth();
   const router = useRouter();
   const { pricing } = usePricing();
@@ -23,7 +39,6 @@ export const DeployModal: React.FC<DeployModalProps> = ({ isOpen, deployment, on
   if (!deployment) return null;
 
   const handleStartNow = () => {
-    // Track deploy modal action
     posthog.capture('deploy_modal_opened', {
       hasCorporateRef: !!corporateRef,
       hasPromoCode: !!promoCode,
@@ -32,138 +47,157 @@ export const DeployModal: React.FC<DeployModalProps> = ({ isOpen, deployment, on
     });
 
     if (!user) {
-      // Track signup initiated
       posthog.capture('signup_initiated', {
         source: 'deploy_modal',
         hasCorporateRef: !!corporateRef,
         hasPromoCode: !!promoCode,
       });
-      // Pass corporate ref or promo code if present, use signup mode
       signIn(corporateRef || undefined, promoCode || undefined, 'signup');
     } else {
-      // Redirect to billing to add payment method
       router.push('/billing');
     }
   };
 
+  const isFree = deployment?.id === 'free';
+  const cta = isFree
+    ? user
+      ? 'Start Free'
+      : 'Sign Up Free'
+    : user
+      ? 'Add Payment Method'
+      : 'Sign Up';
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      size="lg"
-      className="font-mono"
-      title={
-        <Flex align="center" gap={12}>
-          <Terminal size={20} className="text-[#1eb182]" />
-          <Title as="span" className="text-lg uppercase">Start with Hopsworks</Title>
-        </Flex>
-      }
-    >
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="font-mono max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            <Terminal size={20} className="text-primary" />
+            <span className="text-lg uppercase">Start with Hopsworks</span>
+          </DialogTitle>
+        </DialogHeader>
 
-      <Flex direction="column" gap={24}>
-        {user && (
-          <Card className="border-blue-500 bg-blue-50 p-4">
-            <Flex align="center" gap={8} className="mb-2">
-              <User size={16} className="text-blue-600" />
-              <Title as="h3" className="font-mono text-sm">Logged in as: {user.email}</Title>
-            </Flex>
-          </Card>
-        )}
-        
-        <Card className={`p-4 ${deployment?.id === 'free' ? 'border-gray-400 bg-gray-50' : 'border-[#1eb182] bg-[#e8f5f0]'}`}>
-          <Flex align="center" gap={8} className="mb-2">
-            {deployment?.id === 'free' ? (
-              <Gift size={16} className="text-gray-600" />
-            ) : (
-              <Activity size={16} className="text-[#1eb182]" />
+        <div className="flex flex-col gap-6">
+          {user && (
+            <Card className="border-quartz-label-blue bg-quartz-label-blue-shade2 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <User size={16} className="text-quartz-label-blue" />
+                <h3 className="font-mono text-sm font-semibold">
+                  Logged in as: {user.email}
+                </h3>
+              </div>
+            </Card>
+          )}
+
+          <Card
+            className={cn(
+              'p-4',
+              isFree
+                ? 'border-border bg-muted'
+                : 'border-primary bg-quartz-primary-shade2',
             )}
-            <Title as="h3" className="font-mono text-sm uppercase">
-              {deployment?.id === 'free' ? 'Free Tier' : 'Pay-As-You-Go'}
-            </Title>
-          </Flex>
-          <Text className="text-sm font-mono text-gray-700">
-            {deployment?.id === 'free'
-              ? 'Start learning with 1 project. No credit card required. Upgrade anytime.'
-              : 'Start using Hopsworks immediately. Only pay for what you use. No upfront costs, cancel anytime.'
-            }
-          </Text>
-        </Card>
-
-        <Card className="p-4">
-          <Flex align="center" gap={8} className="mb-3">
-            <Zap size={16} className="text-[#1eb182]" />
-            <Title as="h3" className="font-mono text-sm uppercase text-gray-600">Technical Capabilities</Title>
-          </Flex>
-          <Flex direction="column" gap={8}>
-            <Text className="font-mono text-sm">✓ RonDB Online Store (&lt;1ms latency)</Text>
-            <Text className="font-mono text-sm">✓ Spark, Flink, Pandas compute engines</Text>
-            <Text className="font-mono text-sm">✓ Delta Lake, Hudi, Iceberg formats</Text>
-            <Text className="font-mono text-sm">✓ JupyterLab with Python/Spark kernels</Text>
-            <Text className="font-mono text-sm">✓ KServe/vLLM model deployment</Text>
-            <Text className="font-mono text-sm">✓ Point-in-time correct training data</Text>
-            <Text className="font-mono text-sm">✓ BigQuery, Snowflake, S3 connectors</Text>
-          </Flex>
-        </Card>
-
-        {deployment?.id === 'free' ? (
-          <Card variant="readOnly" className="p-4">
-            <Title as="h3" className="font-mono text-sm uppercase text-gray-600 mb-3">What&apos;s Included</Title>
-            <Flex direction="column" gap={8}>
-              <Flex justify="between">
-                <Labeling className="font-mono">Projects</Labeling>
-                <Text className="font-mono font-semibold">1</Text>
-              </Flex>
-              <Flex justify="between">
-                <Labeling className="font-mono">Credit Card</Labeling>
-                <Text className="font-mono font-semibold">Not required</Text>
-              </Flex>
-              <Box className="pt-2 border-t border-grayShade2">
-                <Text className="font-mono text-sm text-gray-600">
-                  Upgrade to Pay-As-You-Go anytime for more projects
-                </Text>
-              </Box>
-            </Flex>
+          >
+            <div className="flex items-center gap-2 mb-2">
+              {isFree ? (
+                <Gift size={16} className="text-muted-foreground" />
+              ) : (
+                <Activity size={16} className="text-primary" />
+              )}
+              <h3 className="font-mono text-sm uppercase font-semibold">
+                {isFree ? 'Free Tier' : 'Pay-As-You-Go'}
+              </h3>
+            </div>
+            <p className="text-sm font-mono text-foreground">
+              {isFree
+                ? 'Start learning with 1 project. No credit card required. Upgrade anytime.'
+                : 'Start using Hopsworks immediately. Only pay for what you use. No upfront costs, cancel anytime.'}
+            </p>
           </Card>
-        ) : (
-          <Card variant="readOnly" className="p-4">
-            <Title as="h3" className="font-mono text-sm uppercase text-gray-600 mb-3">Pricing</Title>
-            <Flex direction="column" gap={8}>
-              <Flex justify="between">
-                <Labeling className="font-mono">Hops Credits</Labeling>
-                <Text className="font-mono">${pricing.compute_credits.toFixed(2)}/credit</Text>
-              </Flex>
-              <Box className="pt-2 border-t border-grayShade2">
-                <Text className="font-mono text-sm text-gray-600">
-                  {user ? 'Add payment method to get started' : 'Sign up and add payment method to get started'}
-                </Text>
-              </Box>
-            </Flex>
+
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap size={16} className="text-primary" />
+              <h3 className="font-mono text-sm uppercase text-muted-foreground font-semibold">
+                Technical Capabilities
+              </h3>
+            </div>
+            <div className="flex flex-col gap-2">
+              {[
+                'RonDB Online Store (<1ms latency)',
+                'Spark, Flink, Pandas compute engines',
+                'Delta Lake, Hudi, Iceberg formats',
+                'JupyterLab with Python/Spark kernels',
+                'KServe/vLLM model deployment',
+                'Point-in-time correct training data',
+                'BigQuery, Snowflake, S3 connectors',
+              ].map((cap) => (
+                <p key={cap} className="font-mono text-sm">
+                  ✓ {cap}
+                </p>
+              ))}
+            </div>
           </Card>
-        )}
-      </Flex>
 
+          <Card variant="muted" className="p-4">
+            <h3 className="font-mono text-sm uppercase text-muted-foreground font-semibold mb-3">
+              {isFree ? "What's Included" : 'Pricing'}
+            </h3>
+            <div className="flex flex-col gap-2">
+              {isFree ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      Projects
+                    </span>
+                    <span className="font-mono font-semibold">1</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      Credit Card
+                    </span>
+                    <span className="font-mono font-semibold">Not required</span>
+                  </div>
+                  <div className="pt-2 border-t border-border">
+                    <p className="font-mono text-sm text-muted-foreground">
+                      Upgrade to Pay-As-You-Go anytime for more projects
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      Hops Credits
+                    </span>
+                    <span className="font-mono">
+                      ${pricing.compute_credits.toFixed(2)}/credit
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-border">
+                    <p className="font-mono text-sm text-muted-foreground">
+                      {user
+                        ? 'Add payment method to get started'
+                        : 'Sign up and add payment method to get started'}
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+        </div>
 
-      <Flex gap={12} justify="end" className="mt-8">
-        <Button
-          onClick={onClose}
-          intent="secondary"
-          size="md"
-          className="font-mono uppercase"
-        >
-          Cancel
-        </Button>
-        <Button
-          intent="primary"
-          size="md"
-          className="font-mono uppercase"
-          onClick={handleStartNow}
-        >
-          {deployment?.id === 'free'
-            ? (user ? 'Start Free' : 'Sign Up Free')
-            : (user ? 'Add Payment Method' : 'Sign Up')
-          }
-        </Button>
-      </Flex>
-    </Modal>
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            onClick={onClose}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleStartNow}>
+            {cta}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

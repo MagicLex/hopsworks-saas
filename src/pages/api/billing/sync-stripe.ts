@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { alertBillingFailure } from '../../../lib/error-handler';
+import { requireCronAuth } from '../../../lib/internal-auth';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-06-30.basil'
@@ -21,15 +22,7 @@ const supabaseAdmin = createClient(
 // This endpoint syncs usage data to Stripe
 // Should be called daily by a cron job
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify this is called by Vercel Cron with proper authentication
-  const authHeader = req.headers.authorization;
-  const expectedAuth = `Bearer ${process.env.CRON_SECRET}`;
-  
-  // Always check CRON_SECRET if it's configured
-  if (process.env.CRON_SECRET && authHeader !== expectedAuth) {
-    console.error('Stripe sync unauthorized attempt');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireCronAuth(req, res)) return;
 
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });

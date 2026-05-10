@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { syncUserProjects } from '../../../lib/project-sync';
+import { requireCronAuth } from '../../../lib/internal-auth';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,13 +23,7 @@ const supabaseAdmin = createClient(
  * - GitHub Actions: Scheduled workflow
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify cron secret to prevent unauthorized access
-  const authHeader = req.headers.authorization;
-  const cronSecret = process.env.CRON_SECRET;
-  
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireCronAuth(req, res)) return;
 
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });

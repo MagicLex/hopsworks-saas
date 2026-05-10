@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Box, Flex, Text } from 'tailwind-quartz';
 import { Slack, Linkedin, Twitter } from 'lucide-react';
 import { StatusIndicator } from './StatusIndicator';
 
@@ -9,42 +8,44 @@ const Footer: React.FC = () => {
   const [isNonUS, setIsNonUS] = useState(false);
 
   useEffect(() => {
-    // Check if user is outside the US
     fetch('https://ipapi.co/json/')
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.country_code && data.country_code !== 'US') {
           setIsNonUS(true);
         }
       })
       .catch(() => {
-        // Don't show if we can't determine location
         setIsNonUS(false);
       });
   }, []);
 
   return (
-    <Box as="footer" className="border-t border-gray-200 mt-auto bg-white">
-      <Box className="max-w-6xl mx-auto px-5 py-3">
-        <Flex align="center" justify="between" className="flex-col gap-2 sm:flex-row">
-          <Flex align="center" gap={8}>
-            <Text className="text-xs text-gray-500">
+    <footer className="border-t border-border mt-auto bg-background">
+      <div className="max-w-6xl mx-auto px-5 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
               © {currentYear} Hopsworks AB
-            </Text>
+            </span>
             {isNonUS && (
-              <Flex align="center" gap={6}>
-                <Text className="text-xs text-gray-500">• Crafted in</Text>
-                <span className="text-base" title="European Union">🇪🇺</span>
-                <span className="text-base" title="Sweden">🇸🇪</span>
-              </Flex>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">• Crafted in</span>
+                <span className="text-base" title="European Union">
+                  🇪🇺
+                </span>
+                <span className="text-base" title="Sweden">
+                  🇸🇪
+                </span>
+              </div>
             )}
-          </Flex>
-          <Flex align="center" gap={12}>
+          </div>
+          <div className="flex items-center gap-3">
             <a
               href="https://join.slack.com/t/public-hopsworks/shared_invite/zt-24fc3hhyq-VBEiN8UZlKsDrrLvtU4NaA"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-400 hover:text-[#4A154B] transition-colors"
+              className="text-muted-foreground hover:text-[#4A154B] transition-colors"
               title="Join our Slack community"
             >
               <Slack size={18} />
@@ -53,7 +54,7 @@ const Footer: React.FC = () => {
               href="https://www.linkedin.com/company/hopsworks/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-400 hover:text-[#0A66C2] transition-colors"
+              className="text-muted-foreground hover:text-[#0A66C2] transition-colors"
               title="Follow us on LinkedIn"
             >
               <Linkedin size={18} />
@@ -62,24 +63,30 @@ const Footer: React.FC = () => {
               href="https://twitter.com/hopsworks"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-400 hover:text-gray-900 transition-colors"
+              className="text-muted-foreground hover:text-foreground transition-colors"
               title="Follow us on X"
             >
               <Twitter size={18} />
             </a>
-          </Flex>
-          <Flex gap={16} className="text-xs">
-            <Link href="/terms" className="text-gray-500 hover:text-gray-700">
+          </div>
+          <div className="flex gap-4 text-xs">
+            <Link
+              href="/terms"
+              className="text-muted-foreground hover:text-foreground"
+            >
               Terms
             </Link>
-            <Link href="/privacy" className="text-gray-500 hover:text-gray-700">
+            <Link
+              href="/privacy"
+              className="text-muted-foreground hover:text-foreground"
+            >
               Privacy
             </Link>
             <a
               href="https://docs.hopsworks.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-muted-foreground hover:text-foreground"
             >
               Docs
             </a>
@@ -87,15 +94,15 @@ const Footer: React.FC = () => {
               href="https://www.hopsworks.ai/contact/main"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-500 hover:text-gray-700"
+              className="text-muted-foreground hover:text-foreground"
             >
               Support
             </a>
             <StatusIndicator />
-          </Flex>
-        </Flex>
-      </Box>
-    </Box>
+          </div>
+        </div>
+      </div>
+    </footer>
   );
 };
 

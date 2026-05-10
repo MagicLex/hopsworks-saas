@@ -1,8 +1,21 @@
 import React from 'react';
+import {
+  Server,
+  HardDrive,
+  Cpu,
+  Zap,
+  Terminal,
+  FileCode,
+  Calendar,
+  X,
+} from 'lucide-react';
+
 import { DeploymentOption } from '@/data/deployments';
-import { Button, Card, Title, Text, Labeling, Badge, Flex, Box } from 'tailwind-quartz';
-import { Server, HardDrive, Cpu, Cloud, Database, Activity, Zap, Shield, Terminal, MessageSquare, FileCode, Calendar, X, Globe } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { usePricing } from '@/contexts/PricingContext';
+import { cn } from '@/lib/utils';
 
 interface DeploymentCardProps {
   deployment: DeploymentOption;
@@ -11,27 +24,14 @@ interface DeploymentCardProps {
   isCorporate?: boolean;
 }
 
-export const DeploymentCard: React.FC<DeploymentCardProps> = ({ 
-  deployment, 
-  isYearly, 
+export const DeploymentCard: React.FC<DeploymentCardProps> = ({
+  deployment,
+  isYearly,
   onDeploy,
-  isCorporate = false 
+  isCorporate = false,
 }) => {
   const price = isYearly ? deployment.yearlyPrice : deployment.monthlyPrice;
   const { pricing } = usePricing();
-  
-  const getButtonIntent = () => {
-    switch (deployment.buttonStyle) {
-      case 'secondary':
-        return 'secondary';
-      case 'enterprise':
-        return 'primary';
-      case 'free':
-        return 'secondary';
-      default:
-        return 'primary';
-    }
-  };
 
   const getButtonText = () => {
     if (deployment.id === 'free') return 'Start Free';
@@ -42,141 +42,172 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
 
   const getIconForCategory = (category: string) => {
     switch (category.toLowerCase()) {
-      case 'compute': return Cpu;
-      case 'storage': return HardDrive;
-      case 'capabilities': return Zap;
-      default: return Server;
+      case 'compute':
+        return Cpu;
+      case 'storage':
+        return HardDrive;
+      case 'capabilities':
+        return Zap;
+      default:
+        return Server;
     }
   };
 
-  // Compact card for enterprise and free tier
-  if (deployment.buttonStyle === 'enterprise' || deployment.buttonStyle === 'free') {
+  if (
+    deployment.buttonStyle === 'enterprise' ||
+    deployment.buttonStyle === 'free'
+  ) {
     const isEnterprise = deployment.buttonStyle === 'enterprise';
     return (
-      <Card className="p-6 bg-gray-50 border-gray-200">
-        <Flex justify="between" align="center">
-          <Box>
-            <Title as="h3" className="text-base mb-1">{deployment.name}</Title>
-            <Text className="text-sm text-gray-600">
+      <Card className="p-6 bg-muted">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold mb-1">{deployment.name}</h3>
+            <p className="text-sm text-muted-foreground">
               {isEnterprise
                 ? 'Contact us for bespoke deployment solutions tailored to your needs'
-                : deployment.subtitle
-              }
-            </Text>
-          </Box>
+                : deployment.subtitle}
+            </p>
+          </div>
           <Button
             onClick={() => onDeploy(deployment)}
-            intent="secondary"
-            size="md"
-            className="font-mono uppercase tracking-wide w-[150px] justify-center"
+            variant="outline"
+            className="w-[150px] justify-center"
           >
             {isEnterprise ? 'Contact Sales' : 'Start Free'}
           </Button>
-        </Flex>
+        </div>
       </Card>
     );
   }
 
   return (
-    <Box className="relative">
+    <div className="relative">
       {deployment.isRecommended && (
-        <Box className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-          <Badge
-            variant="primary"
-            size="sm"
-            className="bg-[#1eb182] text-white px-4 py-1 font-mono font-semibold uppercase"
-          >
-            RECOMMENDED
-          </Badge>
-        </Box>
+        <div className="absolute -top-2.5 left-5 z-10">
+          <span className="bg-background text-primary border border-primary px-2 py-0.5 text-[10px] font-mono tracking-wider rounded">
+            recommended
+          </span>
+        </div>
       )}
-      <Card 
-        className={`flex flex-col transition-all hover:border-grayShade1 ${
-          deployment.isRecommended ? 'border-[#1eb182]' : ''
-        }`}
-        withShadow={(deployment.id === 'small' || deployment.id === 'medium')}
+      <Card
+        className={cn(
+          'flex flex-col transition-all hover:border-quartz-gray-shade1',
+          deployment.isRecommended && 'border-primary',
+        )}
       >
-        <Flex style={{ minHeight: '120px' }}>
-          <Box className="flex-none w-[180px] p-5 border-r border-grayShade2 relative">
-            <Box className="absolute top-2 left-2">
-              <Box className={`w-1.5 h-1.5 rounded-full animate-pulse ${deployment.id === 'free' ? 'bg-gray-400' : 'bg-[#1eb182]'}`} />
-            </Box>
-            <Title as="h4" className="text-base mb-1">
-              {isCorporate && deployment.id === 'payg' ? 'Corporate' : deployment.name}
-            </Title>
-            <Box className="text-sm text-gray-600 mb-2">
+        <div className="flex" style={{ minHeight: '120px' }}>
+          <div className="flex-none w-[180px] p-5 border-r border-border relative">
+            <div className="absolute top-2 left-2">
+              <div
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full animate-pulse',
+                  deployment.id === 'free' ? 'bg-muted-foreground' : 'bg-primary',
+                )}
+              />
+            </div>
+            <h4 className="text-base font-semibold mb-1">
+              {isCorporate && deployment.id === 'payg'
+                ? 'Corporate'
+                : deployment.name}
+            </h4>
+            <div className="text-sm text-muted-foreground mb-2">
               {deployment.id === 'free' ? (
-                <Badge variant="primary" size="sm" className="font-mono font-semibold bg-gray-800 text-white">$0</Badge>
+                <Badge className="font-mono font-semibold bg-foreground text-background">
+                  $0
+                </Badge>
               ) : deployment.id === 'payg' ? (
                 isCorporate ? (
-                  <Badge variant="primary" size="sm" className="font-mono font-semibold">PREPAID</Badge>
+                  <Badge className="font-mono font-semibold">PREPAID</Badge>
                 ) : (
-                  <Flex align="baseline" gap={4}>
-                    <Text className="font-mono font-semibold">${pricing.compute_credits.toFixed(2)}</Text>
-                    <Labeling gray>/credit</Labeling>
-                  </Flex>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-mono font-semibold">
+                      ${pricing.compute_credits.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      /credit
+                    </span>
+                  </div>
                 )
               ) : (
-                <Flex align="baseline" gap={4}>
-                  <Text className="font-mono font-semibold">${price}</Text>
-                  <Labeling gray>/month</Labeling>
-                </Flex>
+                <div className="flex items-baseline gap-1">
+                  <span className="font-mono font-semibold">${price}</span>
+                  <span className="text-xs text-muted-foreground">/month</span>
+                </div>
               )}
-            </Box>
+            </div>
             {deployment.subtitle && (
-              <Text className="text-xs text-gray-500 mb-2">{deployment.subtitle}</Text>
+              <p className="text-xs text-muted-foreground mb-2">
+                {deployment.subtitle}
+              </p>
             )}
-            <Box className="inline-flex items-center px-2 py-0.5 bg-black text-white text-xs font-mono font-semibold uppercase tracking-wider">
+            <div className="inline-flex items-center px-2 py-0.5 bg-foreground text-background text-xs font-mono font-semibold uppercase tracking-wider">
               EU-WEST
-            </Box>
-          </Box>
-      
-          <Flex className="flex-1 p-5" gap={32}>
+            </div>
+          </div>
+
+          <div className="flex flex-1 p-5 gap-8">
             {Object.entries(deployment.specs).map(([category, items]) => {
               const Icon = getIconForCategory(category);
               return (
-                <Box key={category} className="flex-1">
-                  <Flex align="center" gap={6} className="mb-2">
-                    <Icon size={12} className="text-[#1eb182]" />
-                    <Labeling className="text-xs uppercase tracking-wider font-mono" gray>
+                <div key={category} className="flex-1">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Icon size={12} className="text-primary" />
+                    <span className="text-xs uppercase tracking-wider font-mono text-muted-foreground">
                       {category}
-                    </Labeling>
-                  </Flex>
-                  <Flex direction="column" gap={6}>
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
                     {items.map((item, index) => {
                       let ItemIcon = Terminal;
                       if (item.includes('Jupyter')) ItemIcon = FileCode;
-                      if (item.includes('orchestration')) ItemIcon = Calendar;
+                      if (item.includes('orchestration'))
+                        ItemIcon = Calendar;
                       if (item.includes('No')) ItemIcon = X;
-                      
+
                       return (
-                        <Flex key={index} align="center" gap={6}>
-                          <ItemIcon size={10} className={item.includes('No') ? 'text-red-400' : 'text-gray-400'} />
-                          <Text className="text-xs font-mono" dangerouslySetInnerHTML={{ 
-                            __html: item.replace(/(\d+(?:GB|TB)?|^\d+x?\s*\w+|\d+)/g, '<span class="text-[#1eb182] font-semibold">$1</span>')
-                          }} />
-                        </Flex>
+                        <div key={index} className="flex items-center gap-1.5">
+                          <ItemIcon
+                            size={10}
+                            className={
+                              item.includes('No')
+                                ? 'text-destructive'
+                                : 'text-muted-foreground'
+                            }
+                          />
+                          <span
+                            className="text-xs font-mono"
+                            dangerouslySetInnerHTML={{
+                              __html: item.replace(
+                                /(\d+(?:GB|TB)?|^\d+x?\s*\w+|\d+)/g,
+                                '<span class="text-primary font-semibold">$1</span>',
+                              ),
+                            }}
+                          />
+                        </div>
                       );
                     })}
-                  </Flex>
-                </Box>
+                  </div>
+                </div>
               );
             })}
-          </Flex>
-      
-          <Box className="flex-none px-6 flex items-center">
+          </div>
+
+          <div className="flex-none px-6 flex items-center">
             <Button
               onClick={() => onDeploy(deployment)}
-              intent={deployment.id === 'payg' || deployment.isRecommended ? 'primary' : 'secondary'}
-              size="md"
-              className="font-mono uppercase tracking-wide whitespace-nowrap w-[150px] justify-center"
+              variant={
+                deployment.id === 'payg' || deployment.isRecommended
+                  ? 'default'
+                  : 'secondary'
+              }
+              className="whitespace-nowrap w-[150px] justify-center"
             >
               {getButtonText()}
             </Button>
-          </Box>
-        </Flex>
-      
+          </div>
+        </div>
       </Card>
-    </Box>
+    </div>
   );
 };
