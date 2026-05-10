@@ -7,7 +7,6 @@ const nextConfig = {
     unoptimized: false, // Re-enabled image optimization now that we use server-side rendering
     domains: ['cdn.prod.website-files.com'] // Allow Hopsworks CDN images
   },
-  transpilePackages: ['@logicalclocks/tailwind-quartz'],
   async redirects() {
     return [
       {

@@ -1,0 +1,72 @@
+import * as React from 'react';
+import { Tooltip as TooltipPrimitive } from 'radix-ui';
+
+import { cn } from '@/lib/utils';
+
+const TooltipProvider = TooltipPrimitive.Provider;
+const TooltipRoot = TooltipPrimitive.Root;
+const TooltipTrigger = TooltipPrimitive.Trigger;
+
+function TooltipContent({
+  className,
+  sideOffset = 4,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          'z-50 max-w-xs rounded-md bg-foreground px-3 py-1.5 text-xs text-background shadow-md animate-in fade-in-0 zoom-in-95',
+          'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+          className,
+        )}
+        {...props}
+      />
+    </TooltipPrimitive.Portal>
+  );
+}
+
+const TooltipPositions = {
+  top: 'top',
+  bottom: 'bottom',
+  left: 'left',
+  right: 'right',
+} as const;
+
+type TooltipPosition = (typeof TooltipPositions)[keyof typeof TooltipPositions];
+
+function Tooltip({
+  children,
+  content,
+  disabled,
+  side,
+}: {
+  children: React.ReactNode;
+  content?: React.ReactNode;
+  disabled?: boolean;
+  side?: TooltipPosition;
+}) {
+  if (disabled || !content || !children) return <>{children}</>;
+
+  return (
+    <TooltipProvider>
+      <TooltipRoot>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side={side}>{content}</TooltipContent>
+      </TooltipRoot>
+    </TooltipProvider>
+  );
+}
+
+export {
+  Tooltip,
+  TooltipPositions,
+  type TooltipPosition,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+  TooltipContent,
+};

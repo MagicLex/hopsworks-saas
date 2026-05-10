@@ -1,94 +1,93 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
-import { useAuth } from '@/contexts/AuthContext';
-import { Box, Flex, Text } from 'tailwind-quartz';
 import { CheckCircle, XCircle } from 'lucide-react';
+
+import { useAuth } from '@/contexts/AuthContext';
 import { HopsSpinner } from '@/components/HopsSpinner';
 
 export default function JoiningTeamPage() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { token } = router.query;
-  const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const [status, setStatus] = useState<'processing' | 'success' | 'error'>(
+    'processing',
+  );
   const [message, setMessage] = useState('Joining team...');
 
   useEffect(() => {
     if (!user || !token) return;
 
-    // Get consent from sessionStorage (stored before Auth0 redirect)
-    const termsAccepted = sessionStorage.getItem('terms_accepted') === 'true';
-    const marketingConsent = sessionStorage.getItem('marketing_consent') === 'true';
+    const termsAccepted =
+      sessionStorage.getItem('terms_accepted') === 'true';
+    const marketingConsent =
+      sessionStorage.getItem('marketing_consent') === 'true';
 
-    // Process the team invitation
     fetch('/api/team/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, termsAccepted, marketingConsent })
+      body: JSON.stringify({ token, termsAccepted, marketingConsent }),
     })
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.error) {
           setStatus('error');
           setMessage(data.error);
-          // Clear sync flag so AuthContext can re-evaluate on next navigation
           sessionStorage.removeItem('user_synced_session');
         } else {
-          // Only clear consent AFTER successful join
           sessionStorage.removeItem('terms_accepted');
           sessionStorage.removeItem('marketing_consent');
 
           setStatus('success');
           setMessage('Successfully joined the team!');
-          // Redirect to dashboard after 2 seconds
-          // Add joined=true param to skip billing check on first load
           setTimeout(() => {
             router.push('/dashboard?joined=true');
           }, 2000);
         }
       })
-      .catch(err => {
+      .catch(() => {
         setStatus('error');
         setMessage('Failed to join team. Please try again.');
-        // Clear sync flag so AuthContext can re-evaluate on next navigation
         sessionStorage.removeItem('user_synced_session');
       });
   }, [user, token, router]);
 
   return (
-    <Flex align="center" justify="center" className="min-h-screen bg-gray-50">
-      <Box className="text-center">
+    <div className="flex items-center justify-center min-h-screen bg-muted">
+      <div className="text-center">
         {status === 'processing' && (
           <>
             <HopsSpinner size="lg" className="mx-auto" />
-            <Text className="mt-4 text-gray-600">{message}</Text>
+            <p className="mt-4 text-muted-foreground">{message}</p>
           </>
         )}
-        
+
         {status === 'success' && (
           <>
-            <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
-            <Text className="mt-4 text-gray-800 font-medium">{message}</Text>
-            <Text className="mt-2 text-sm text-gray-600">Redirecting to dashboard...</Text>
+            <CheckCircle className="h-12 w-12 text-quartz-label-green mx-auto" />
+            <p className="mt-4 text-foreground font-medium">{message}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Redirecting to dashboard...
+            </p>
           </>
         )}
 
         {status === 'error' && (
           <>
-            <XCircle className="h-12 w-12 text-red-500 mx-auto" />
-            <Text className="mt-4 text-gray-800 font-medium">{message}</Text>
-            <Text className="mt-2 text-sm text-gray-600">
+            <XCircle className="h-12 w-12 text-destructive mx-auto" />
+            <p className="mt-4 text-foreground font-medium">{message}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
               Ask the team owner to send you a new invite, or{' '}
               <button
+                type="button"
                 onClick={() => signOut()}
                 className="text-primary hover:underline"
               >
                 sign out and try again
               </button>
-            </Text>
+            </p>
           </>
         )}
-      </Box>
-    </Flex>
+      </div>
+    </div>
   );
 }

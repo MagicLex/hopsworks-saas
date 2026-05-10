@@ -1,7 +1,12 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
+@custom-variant dark (&:is(.dark *));
+
+/* ------------------------------------------------------------------ */
+/* Legacy CSS vars — still referenced via inline `style` props.        */
+/* Aliased to the new shadcn tokens so a single source of truth wins.  */
+/* ------------------------------------------------------------------ */
 :root {
   --primary-color: #1eb182;
   --primary-hover: #1a9d6e;
@@ -14,14 +19,206 @@
   --bg-tertiary: #f5f5f5;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* ------------------------------------------------------------------ */
+/* shadcn semantic tokens (light) — mirrored from hopsworks-front.     */
+/* ------------------------------------------------------------------ */
+:root {
+  --background: #ffffff;
+  --foreground: #272727;
+  --card: #ffffff;
+  --card-foreground: #272727;
+  --popover: #ffffff;
+  --popover-foreground: #272727;
+  --primary: #1eb182;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #272727;
+  --muted: #f5f5f5;
+  --muted-foreground: #707070;
+  --accent: #ececec;
+  --accent-foreground: #272727;
+  --destructive: #eb5757;
+  --border: #e2e2e2;
+  --input: #e2e2e2;
+  --ring: #b5b5b5;
+  --surface-recessed: #ececec;
+  --radius: 0.625rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #272727;
+  --sidebar-primary: #1eb182;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6f2ee;
+  --sidebar-accent-foreground: #145c44;
+  --sidebar-border: #e2e2e2;
+  --sidebar-ring: #1eb182;
+
+  /* ---- Quartz brand palette (light) — shared with hopsworks-front --- */
+  --quartz-primary: #21b182;
+  --quartz-primary-shade1: #65d3af;
+  --quartz-primary-shade2: #e6f2ee;
+  --quartz-gray: #a0a0a0;
+  --quartz-gray-shade1: #cbcbcb;
+  --quartz-gray-shade2: #e2e2e2;
+  --quartz-gray-shade3: #f5f5f5;
+  --quartz-gray-shade4: #fafafa;
+  --quartz-black: #272727;
+  --quartz-white: #ffffff;
+  --quartz-label-red: #eb5757;
+  --quartz-label-red-shade2: #f8dede;
+  --quartz-label-orange: #f2994a;
+  --quartz-label-orange-shade2: #fdf0e4;
+  --quartz-label-purple: #9b51e0;
+  --quartz-label-purple-shade2: #f5eefc;
+  --quartz-label-yellow: #ffe600;
+  --quartz-label-yellow-shade2: #fff8b3;
+  --quartz-label-green: #21b182;
+  --quartz-label-green-shade2: #e6f2ee;
+  --quartz-label-blue: #186781;
+  --quartz-label-blue-shade1: #41b7dc;
+  --quartz-label-blue-shade2: #ecf8fc;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: var(--bg-tertiary);
+.dark {
+  --background: #181a1b;
+  --foreground: #f0f0f0;
+  --card: #1e2021;
+  --card-foreground: #f0f0f0;
+  --popover: #1e2021;
+  --popover-foreground: #f0f0f0;
+  --primary: #229570;
+  --primary-foreground: #ffffff;
+  --secondary: #1e2021;
+  --secondary-foreground: #f0f0f0;
+  --muted: #1e2021;
+  --muted-foreground: #a6a6a6;
+  --accent: #1e2021;
+  --accent-foreground: #f0f0f0;
+  --destructive: #c44d4d;
+  --border: #4d4d4d;
+  --input: #4d4d4d;
+  --ring: #707070;
+  --surface-recessed: #0a0a0a;
+  --sidebar: #1e2021;
+  --sidebar-foreground: #f0f0f0;
+  --sidebar-primary: #229570;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a3a2e;
+  --sidebar-accent-foreground: #65d3af;
+  --sidebar-border: #4d4d4d;
+  --sidebar-ring: #229570;
+
+  --quartz-primary: #229570;
+  --quartz-primary-shade1: #326756;
+  --quartz-primary-shade2: #264339;
+  --quartz-gray: #a6a6a6;
+  --quartz-gray-shade1: #707070;
+  --quartz-gray-shade2: #4d4d4d;
+  --quartz-gray-shade3: #1e2021;
+  --quartz-gray-shade4: #0a0a0a;
+  --quartz-black: #f0f0f0;
+  --quartz-white: #181a1b;
 }
 
+/* ------------------------------------------------------------------ */
+/* Tailwind v4 @theme — maps CSS vars to utility classes.              */
+/* ------------------------------------------------------------------ */
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-surface-recessed: var(--surface-recessed);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Quartz brand palette — bg-quartz-primary, text-quartz-label-red, … */
+  --color-quartz-primary: var(--quartz-primary);
+  --color-quartz-primary-shade1: var(--quartz-primary-shade1);
+  --color-quartz-primary-shade2: var(--quartz-primary-shade2);
+  --color-quartz-gray: var(--quartz-gray);
+  --color-quartz-gray-shade1: var(--quartz-gray-shade1);
+  --color-quartz-gray-shade2: var(--quartz-gray-shade2);
+  --color-quartz-gray-shade3: var(--quartz-gray-shade3);
+  --color-quartz-gray-shade4: var(--quartz-gray-shade4);
+  --color-quartz-black: var(--quartz-black);
+  --color-quartz-white: var(--quartz-white);
+  --color-quartz-label-red: var(--quartz-label-red);
+  --color-quartz-label-red-shade2: var(--quartz-label-red-shade2);
+  --color-quartz-label-orange: var(--quartz-label-orange);
+  --color-quartz-label-orange-shade2: var(--quartz-label-orange-shade2);
+  --color-quartz-label-purple: var(--quartz-label-purple);
+  --color-quartz-label-purple-shade2: var(--quartz-label-purple-shade2);
+  --color-quartz-label-yellow: var(--quartz-label-yellow);
+  --color-quartz-label-yellow-shade2: var(--quartz-label-yellow-shade2);
+  --color-quartz-label-green: var(--quartz-label-green);
+  --color-quartz-label-green-shade2: var(--quartz-label-green-shade2);
+  --color-quartz-label-blue: var(--quartz-label-blue);
+  --color-quartz-label-blue-shade1: var(--quartz-label-blue-shade1);
+  --color-quartz-label-blue-shade2: var(--quartz-label-blue-shade2);
+
+  /* Radii */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Flat UI — no drop shadows by default */
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base resets                                                         */
+/* ------------------------------------------------------------------ */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border, currentColor);
+    box-sizing: border-box;
+  }
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}

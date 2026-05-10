@@ -1,7 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/router';
-import { Card, Button, Box, Text, Labeling, IconLabel, Dropdown, DropdownItem } from 'tailwind-quartz';
-import { User, LogOut, Settings, CreditCard, Activity, Shield } from 'lucide-react';
+import {
+  User,
+  LogOut,
+  Settings,
+  CreditCard,
+  Activity,
+  Shield,
+  ChevronDown,
+} from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { ADMIN_ROUTE } from '@/config/admin';
@@ -10,66 +27,60 @@ export const UserProfile: React.FC = () => {
   const { user, signOut } = useAuth();
   const { isAdmin } = useAdmin();
   const router = useRouter();
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   if (!user) return null;
 
-  const handleSignOut = async () => {
-    await signOut();
-  };
-
-  const handleNavigation = (path: string) => {
-    router.push(path);
-    setIsDropdownOpen(false);
-  };
-
   return (
-    <Box className="relative">
-      <Button
-        intent="ghost"
-        size="md"
-        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-        className="flex items-center gap-2 max-w-[200px]"
-      >
-        <span className="truncate">{user.email}</span>
-      </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="default"
+          className="flex items-center gap-2 max-w-[220px]"
+        >
+          <User className="size-4 shrink-0" />
+          <span className="truncate">{user.email}</span>
+          <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
 
-      {isDropdownOpen && (
-        <Box className="absolute right-0 top-full mt-2 w-64 z-50">
-          <Card className="p-0" withShadow>
-            <Box className="p-4 border-b border-grayShade2">
-              <Labeling gray className="text-xs uppercase mb-1">Account</Labeling>
-              <Text className="font-mono text-sm truncate">{user.email}</Text>
-            </Box>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Account</DropdownMenuLabel>
+        <div className="px-1.5 pb-1.5 font-mono text-xs truncate text-foreground">
+          {user.email}
+        </div>
+        <DropdownMenuSeparator />
 
-            <Box className="p-2">
-              <DropdownItem onClick={() => handleNavigation('/dashboard')}>
-                <IconLabel icon={<Activity size={14} />}>Dashboard</IconLabel>
-              </DropdownItem>
+        <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+          <Activity className="size-4" />
+          Dashboard
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => router.push('/dashboard?tab=billing')}
+        >
+          <CreditCard className="size-4" />
+          Billing
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => router.push('/dashboard?tab=settings')}
+        >
+          <Settings className="size-4" />
+          Account Settings
+        </DropdownMenuItem>
 
-              <DropdownItem onClick={() => handleNavigation('/dashboard?tab=billing')}>
-                <IconLabel icon={<CreditCard size={14} />}>Billing</IconLabel>
-              </DropdownItem>
+        {isAdmin && (
+          <DropdownMenuItem onClick={() => router.push(ADMIN_ROUTE)}>
+            <Shield className="size-4" />
+            Admin Dashboard
+          </DropdownMenuItem>
+        )}
 
-              <DropdownItem onClick={() => handleNavigation('/dashboard?tab=settings')}>
-                <IconLabel icon={<Settings size={14} />}>Account Settings</IconLabel>
-              </DropdownItem>
-
-              {isAdmin && (
-                <DropdownItem onClick={() => handleNavigation(ADMIN_ROUTE)}>
-                  <IconLabel icon={<Shield size={14} />}>Admin Dashboard</IconLabel>
-                </DropdownItem>
-              )}
-
-              <Box className="border-t border-grayShade2 mt-2 pt-2">
-                <DropdownItem onClick={handleSignOut}>
-                  <IconLabel icon={<LogOut size={14} />}>Sign Out</IconLabel>
-                </DropdownItem>
-              </Box>
-            </Box>
-          </Card>
-        </Box>
-      )}
-    </Box>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onClick={() => signOut()}>
+          <LogOut className="size-4" />
+          Sign Out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };

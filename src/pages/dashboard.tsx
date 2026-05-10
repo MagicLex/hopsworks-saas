@@ -1,19 +1,63 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBilling, BillingInfo } from '@/contexts/BillingContext';
 import { useApiData } from '@/hooks/useApiData';
-import { Box, Flex, Title, Text, Button, Card, Badge, Tabs, TabsContent, TabsList, TabsTrigger, Modal, Input, Select, IconLabel, StatusMessage } from 'tailwind-quartz';
-import { CreditCard, Trash2, Server, LogOut, Database, Activity, Cpu, Users, Copy, ExternalLink, CheckCircle, UserPlus, Mail, Download, Calendar, AlertTriangle, TrendingUp, Clock, FolderOpen, RefreshCw } from 'lucide-react';
-import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import {
+  CreditCard,
+  Trash2,
+  Server,
+  Database,
+  Activity,
+  Copy,
+  ExternalLink,
+  CheckCircle,
+  Mail,
+  Calendar,
+  AlertTriangle,
+  TrendingUp,
+  Clock,
+  FolderOpen,
+  RefreshCw,
+  Users,
+} from 'lucide-react';
 import Layout from '@/components/Layout';
 import ClusterAccessStatus from '@/components/ClusterAccessStatus';
 import TeamMemberProjects from '@/components/team/TeamMemberProjects';
 import CardSkeleton from '@/components/CardSkeleton';
-import { DEFAULT_RATES } from '@/config/billing-rates';
 import { usePricing } from '@/contexts/PricingContext';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import posthog from 'posthog-js';
 
 interface UsageData {
@@ -92,6 +136,40 @@ interface TeamInvite {
   token: string;
   expires_at: string;
   created_at: string;
+}
+
+type StatusBoxTone = 'info' | 'warning' | 'error' | 'success';
+
+const statusBoxStyles: Record<StatusBoxTone, string> = {
+  info: 'border-quartz-label-blue/40 bg-quartz-label-blue-shade2 text-quartz-label-blue',
+  warning: 'border-quartz-label-orange/40 bg-quartz-label-orange-shade2 text-quartz-label-orange',
+  error: 'border-destructive/40 bg-destructive/10 text-destructive',
+  success: 'border-quartz-label-green/40 bg-quartz-label-green-shade2 text-quartz-label-green',
+};
+
+function StatusBox({
+  tone,
+  icon,
+  className,
+  children,
+}: {
+  tone: StatusBoxTone;
+  icon?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border p-4 flex items-start gap-3',
+        statusBoxStyles[tone],
+        className,
+      )}
+    >
+      {icon}
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -303,7 +381,7 @@ export default function Dashboard() {
 
       await refetchBilling();
     } catch (error: any) {
-      alert(error.message || 'Failed to save spending cap');
+      toast.error(error.message || 'Failed to save spending cap');
     } finally {
       setSavingSpendingCap(false);
     }
@@ -323,20 +401,20 @@ export default function Dashboard() {
   const handleInvite = async () => {
     setInviteError('');
     setInviteLoading(true);
-    
+
     try {
       const response = await fetch('/api/team/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           email: inviteEmail,
           projectRole: inviteRole,
-          autoAssignProjects 
+          autoAssignProjects
         })
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to send invite');
       }
@@ -355,6 +433,7 @@ export default function Dashboard() {
 
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [removingMember, setRemovingMember] = useState(false);
 
   const handleRemoveMember = async (memberId: string) => {
     setRemovingMemberId(memberId);
@@ -364,6 +443,7 @@ export default function Dashboard() {
   const confirmRemoveMember = async () => {
     if (!removingMemberId) return;
 
+    setRemovingMember(true);
     try {
       const response = await fetch(`/api/team/members?memberId=${removingMemberId}`, {
         method: 'DELETE'
@@ -376,7 +456,9 @@ export default function Dashboard() {
       await refetchTeamData();
     } catch (error) {
       console.error('Error removing member:', error);
-      alert('Failed to remove team member. Please try again.');
+      toast.error('Failed to remove team member. Please try again.');
+    } finally {
+      setRemovingMember(false);
     }
   };
 
@@ -387,7 +469,7 @@ export default function Dashboard() {
       });
 
       if (!response.ok) throw new Error('Failed to cancel invite');
-      
+
       await fetchInvites();
     } catch (error) {
       console.error('Error canceling invite:', error);
@@ -397,14 +479,14 @@ export default function Dashboard() {
   const copyInviteLink = (token: string) => {
     const inviteUrl = `${window.location.origin}/team/accept-invite?token=${token}`;
     navigator.clipboard.writeText(inviteUrl);
-    alert('Invite link copied to clipboard!');
+    toast.success('Invite link copied to clipboard');
   };
 
   if (authLoading) {
     return (
-      <Box className="min-h-screen flex items-center justify-center">
-        <Text>Loading...</Text>
-      </Box>
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
     );
   }
 
@@ -418,34 +500,32 @@ export default function Dashboard() {
         <meta name="robots" content="noindex, nofollow" />
       </Head>
       <Layout className="py-10 px-5">
-        <Box className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           {/* Team Member Banner */}
           {billing?.isTeamMember && (
-            <Card className="p-4 mb-6 border-blue-200 bg-blue-50">
-              <Flex align="center" gap={12}>
-                <Users size={20} className="text-blue-600" />
-                <Box className="flex-1">
-                  <Text className="text-sm text-blue-800">
-                    You are part of <strong>{billing.accountOwner?.name || billing.accountOwner?.email}</strong>&apos;s team.
-                    Your usage is billed to the account owner.
-                  </Text>
-                </Box>
-              </Flex>
-            </Card>
+            <StatusBox
+              tone="info"
+              icon={<Users size={20} className="text-quartz-label-blue mt-0.5" />}
+              className="mb-6"
+            >
+              <p className="text-sm">
+                You are part of <strong>{billing.accountOwner?.name || billing.accountOwner?.email}</strong>&apos;s team.
+                Your usage is billed to the account owner.
+              </p>
+            </StatusBox>
           )}
 
           {/* API Error Banner */}
           {apiError && (
-            <Card className="p-4 mb-6 border-yellow-200 bg-yellow-50">
-              <Flex align="center" gap={12}>
-                <AlertTriangle size={20} className="text-yellow-600" />
-                <Box className="flex-1">
-                  <Text className="text-sm text-yellow-800">
-                    Some data could not be loaded. Please refresh the page. If the problem persists, contact support.
-                  </Text>
-                </Box>
-              </Flex>
-            </Card>
+            <StatusBox
+              tone="warning"
+              icon={<AlertTriangle size={20} className="text-quartz-label-orange mt-0.5" />}
+              className="mb-6"
+            >
+              <p className="text-sm">
+                Some data could not be loaded. Please refresh the page. If the problem persists, contact support.
+              </p>
+            </StatusBox>
           )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -466,7 +546,7 @@ export default function Dashboard() {
 
             <TabsContent value="cluster">
               {/* Cluster Access Status */}
-              <Box className="mb-6">
+              <div className="mb-6">
                 <ClusterAccessStatus
                   hasCluster={hopsworksInfo?.hasCluster || false}
                   hasPaymentMethod={billing?.hasPaymentMethod || false}
@@ -476,50 +556,51 @@ export default function Dashboard() {
                   reloadProgress={reloadProgress}
                   isTeamMember={billing?.isTeamMember}
                 />
-              </Box>
+              </div>
 
               {/* Free tier upsell banner */}
               {billing?.billingMode === 'free' && hopsworksInfo?.hasCluster && (
-                <Card className="p-4 mb-6 border-blue-200 bg-blue-50">
-                  <Flex align="center" gap={12}>
-                    <TrendingUp size={20} className="text-blue-600" />
-                    <Box className="flex-1">
-                      <Text className="text-sm text-blue-800">
-                        <strong>Free plan:</strong> 1 project limit.{' '}
-                        <button
-                          onClick={handleUpgradeToPostpaid}
-                          disabled={upgradingToPostpaid}
-                          className="underline hover:text-blue-900 disabled:opacity-50"
-                        >
-                          {upgradingToPostpaid ? 'Upgrading...' : (billing?.hasPaymentMethod ? 'Upgrade to Pay-as-you-go' : 'Add a payment method')}
-                        </button>{' '}
-                        to unlock 5 projects and remove quotas.
-                      </Text>
-                    </Box>
-                  </Flex>
-                </Card>
+                <StatusBox
+                  tone="info"
+                  icon={<TrendingUp size={20} className="text-quartz-label-blue mt-0.5" />}
+                  className="mb-6"
+                >
+                  <p className="text-sm">
+                    <strong>Free plan:</strong> 1 project limit.{' '}
+                    <button
+                      type="button"
+                      onClick={handleUpgradeToPostpaid}
+                      disabled={upgradingToPostpaid}
+                      className="underline hover:opacity-80 disabled:opacity-50"
+                    >
+                      {upgradingToPostpaid ? 'Upgrading...' : (billing?.hasPaymentMethod ? 'Upgrade to Pay-as-you-go' : 'Add a payment method')}
+                    </button>{' '}
+                    to unlock 5 projects and remove quotas.
+                  </p>
+                </StatusBox>
               )}
 
               {instance && instance.endpoint ? (
                 <>
                   {/* Usage Metrics - moved to top */}
-                  <Box className="mb-6">
-                    <Title as="h2" className="text-lg mb-4">Current Usage</Title>
-                    <Flex gap={16} className="grid grid-cols-1 md:grid-cols-3">
+                  <div className="mb-6">
+                    <h2 className="text-lg font-semibold mb-4">Current Usage</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       {billingLoading ? (
                         <CardSkeleton rows={2} showIcon={false} />
                       ) : (
                         <Card className="p-4">
-                          <IconLabel icon={<CreditCard size={16} className="text-[#1eb182]" />} gap={8} className="mb-2">
-                            <Text className="text-sm text-gray-600">This Month</Text>
-                          </IconLabel>
-                          <Text className="text-xl font-semibold">
+                          <span className="inline-flex items-center gap-2 mb-2">
+                            <CreditCard size={16} className="text-primary" />
+                            <span className="text-sm text-muted-foreground">This Month</span>
+                          </span>
+                          <p className="text-xl font-semibold">
                             ${billing?.currentUsage?.currentMonth?.total?.toFixed(2) || '0.00'}
-                          </Text>
+                          </p>
                           {billing?.spendingCap ? (
-                            <Text className="text-xs text-gray-500">of ${billing.spendingCap} cap</Text>
+                            <p className="text-xs text-muted-foreground">of ${billing.spendingCap} cap</p>
                           ) : (
-                            <Text className="text-xs text-gray-500">No spending cap</Text>
+                            <p className="text-xs text-muted-foreground">No spending cap</p>
                           )}
                         </Card>
                       )}
@@ -527,190 +608,188 @@ export default function Dashboard() {
                         <CardSkeleton rows={2} showIcon={false} className="md:col-span-2" />
                       ) : hopsworksInfo?.hasHopsworksUser ? (
                         <Card className="p-4 md:col-span-2">
-                          <IconLabel icon={<Database size={16} className="text-[#1eb182]" />} gap={8} className="mb-2">
-                            <Text className="text-sm text-gray-600">Projects</Text>
-                          </IconLabel>
-                          <Text className="text-xl font-semibold">
+                          <span className="inline-flex items-center gap-2 mb-2">
+                            <Database size={16} className="text-primary" />
+                            <span className="text-sm text-muted-foreground">Projects</span>
+                          </span>
+                          <p className="text-xl font-semibold">
                             {hopsworksInfo?.projects?.length || '0'}
-                          </Text>
-                          <Text className="text-xs text-gray-500">Active projects</Text>
-                          {
-                            <Box className="mt-3 pt-3 border-t border-gray-100">
-                              {hopsworksInfo?.projects && hopsworksInfo.projects.length > 0 ? (
-                                <Flex gap={6} className="flex-wrap">
-                                  {hopsworksInfo.projects.slice(0, 3).map(project => (
-                                    <a
-                                      key={project.id}
-                                      href={`${instance?.endpoint || hopsworksInfo?.clusterEndpoint || ''}/p/${project.id}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1eb182]/10 hover:bg-[#1eb182]/20 text-[#1eb182] rounded-full text-sm font-medium transition-colors"
-                                    >
-                                      <FolderOpen size={14} />
-                                      <span>{project.name}</span>
-                                      <ExternalLink size={12} />
-                                    </a>
-                                  ))}
-                                  {hopsworksInfo.projects.length > 3 && (
-                                    <span className="inline-flex items-center px-3 py-1.5 bg-gray-100 text-gray-500 rounded-full text-sm">
-                                      +{hopsworksInfo.projects.length - 3} more
-                                    </span>
-                                  )}
-                                </Flex>
-                              ) : (
-                                <Text className="text-xs text-gray-500">No projects yet</Text>
-                              )}
-                            </Box>
-                          }
+                          </p>
+                          <p className="text-xs text-muted-foreground">Active projects</p>
+                          <div className="mt-3 pt-3 border-t border-border">
+                            {hopsworksInfo?.projects && hopsworksInfo.projects.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {hopsworksInfo.projects.slice(0, 3).map(project => (
+                                  <a
+                                    key={project.id}
+                                    href={`${instance?.endpoint || hopsworksInfo?.clusterEndpoint || ''}/p/${project.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-quartz-primary/10 hover:bg-quartz-primary/20 text-primary rounded-full text-sm font-medium transition-colors"
+                                  >
+                                    <FolderOpen size={14} />
+                                    <span>{project.name}</span>
+                                    <ExternalLink size={12} />
+                                  </a>
+                                ))}
+                                {hopsworksInfo.projects.length > 3 && (
+                                  <span className="inline-flex items-center px-3 py-1.5 bg-muted text-muted-foreground rounded-full text-sm">
+                                    +{hopsworksInfo.projects.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No projects yet</p>
+                            )}
+                          </div>
                         </Card>
                       ) : null}
-                    </Flex>
-                  </Box>
+                    </div>
+                  </div>
 
                   {instanceLoading ? (
                     <CardSkeleton rows={4} className="mb-6" />
                   ) : (
                     <Card className="p-6 mb-6">
-                      <Flex align="center" gap={12} className="mb-4">
-                        <Server size={20} className="text-[#1eb182]" />
-                        <Title as="h2" className="text-lg">Your Hopsworks Instance</Title>
-                        <Badge variant={instance.status === 'active' ? 'success' : 'default'}>
+                      <div className="flex items-center gap-3 mb-4">
+                        <Server size={20} className="text-primary" />
+                        <h2 className="text-lg font-semibold">Your Hopsworks Instance</h2>
+                        <Badge variant={instance.status === 'active' ? 'success' : 'secondary'}>
                           {instance.status || 'Unknown'}
                         </Badge>
-                      </Flex>
-                    
-                    <Box className="space-y-3">
-                      <Flex justify="between">
-                        <Text className="text-sm text-gray-600">Instance Name</Text>
-                        <Text className="text-sm font-medium">{instance.name}</Text>
-                      </Flex>
-                      
-                      <Flex justify="between">
-                        <Text className="text-sm text-gray-600">Plan</Text>
-                        <Text className="text-sm font-medium">{instance.plan}</Text>
-                      </Flex>
-                      
-                      {instance.created && (
-                        <Flex justify="between">
-                          <Text className="text-sm text-gray-600">Created</Text>
-                          <Text className="text-sm font-medium">
-                            {new Date(instance.created).toLocaleDateString()}
-                          </Text>
-                        </Flex>
-                      )}
-                      
-                      <Box className="pt-3 border-t border-gray-100">
-                        <Flex justify="between" align="center">
-                          <Text className="text-sm text-gray-600">Endpoint</Text>
-                          <Flex gap={8}>
-                            <Text className="text-sm font-mono bg-gray-50 px-2 py-1 rounded">
-                              {instance.endpoint}
-                            </Text>
-                            <Button
-                              intent="ghost"
-                              size="md"
-                              className="p-1"
-                              onClick={() => {
-                                navigator.clipboard.writeText(instance.endpoint);
-                                setCopied('endpoint');
-                                setTimeout(() => setCopied(''), 2000);
-                              }}
-                            >
-                              {copied === 'endpoint' ? <CheckCircle size={14} /> : <Copy size={14} />}
-                            </Button>
-                          </Flex>
-                        </Flex>
-                      </Box>
-                    </Box>
-                    
-                    <Flex gap={12} className="mt-6">
-                      <Button
-                        intent={instance.endpoint ? "primary" : "secondary"}
-                        size="md"
-                        className="uppercase flex-1"
-                        disabled={!instance.endpoint}
-                        onClick={() => {
-                          if (instance.endpoint) {
-                            // Track cluster access
-                            posthog.capture('cluster_accessed', {
-                              clusterEndpoint: instance.endpoint,
-                              instanceName: instance.name,
-                              billingMode: billing?.billingMode,
-                            });
+                      </div>
 
-                            // Redirect to auto-OAuth URL for automatic login with Auth0
-                            const autoOAuthUrl = `${instance.endpoint}/autoOAuth?providerName=Auth0`;
-                            window.open(autoOAuthUrl, '_blank');
-                            
-                            // Only trigger sync if user needs it (missing Hopsworks info or payment but no projects)
-                            const needsSync = !hopsworksInfo?.hopsworksUser || 
-                                            (billing?.hasPaymentMethod && (!hopsworksInfo?.projects || hopsworksInfo.projects.length === 0));
-                            
-                            if (needsSync) {
-                              // Start retrying after 2s with exponential backoff
-                              let retryCount = 0;
-                              const maxRetries = 5;
-                              const baseDelay = 2000; // 2 seconds base
-                              
-                              const attemptSync = async () => {
-                                try {
-                                  const response = await fetch('/api/auth/sync-user', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({})
-                                  });
-                                  
-                                  if (response.ok) {
-                                    console.log('Successfully synced user after Hopsworks access');
-                                    return;
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Instance Name</span>
+                          <span className="text-sm font-medium">{instance.name}</span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Plan</span>
+                          <span className="text-sm font-medium">{instance.plan}</span>
+                        </div>
+
+                        {instance.created && (
+                          <div className="flex justify-between">
+                            <span className="text-sm text-muted-foreground">Created</span>
+                            <span className="text-sm font-medium">
+                              {new Date(instance.created).toLocaleDateString()}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="pt-3 border-t border-border">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Endpoint</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                                {instance.endpoint}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(instance.endpoint);
+                                  setCopied('endpoint');
+                                  setTimeout(() => setCopied(''), 2000);
+                                }}
+                                aria-label="Copy endpoint"
+                              >
+                                {copied === 'endpoint' ? <CheckCircle size={14} /> : <Copy size={14} />}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 mt-6">
+                        <Button
+                          variant={instance.endpoint ? 'default' : 'secondary'}
+                          className="flex-1"
+                          disabled={!instance.endpoint}
+                          onClick={() => {
+                            if (instance.endpoint) {
+                              // Track cluster access
+                              posthog.capture('cluster_accessed', {
+                                clusterEndpoint: instance.endpoint,
+                                instanceName: instance.name,
+                                billingMode: billing?.billingMode,
+                              });
+
+                              // Redirect to auto-OAuth URL for automatic login with Auth0
+                              const autoOAuthUrl = `${instance.endpoint}/autoOAuth?providerName=Auth0`;
+                              window.open(autoOAuthUrl, '_blank');
+
+                              // Only trigger sync if user needs it (missing Hopsworks info or payment but no projects)
+                              const needsSync = !hopsworksInfo?.hopsworksUser ||
+                                              (billing?.hasPaymentMethod && (!hopsworksInfo?.projects || hopsworksInfo.projects.length === 0));
+
+                              if (needsSync) {
+                                // Start retrying after 2s with exponential backoff
+                                let retryCount = 0;
+                                const maxRetries = 5;
+                                const baseDelay = 2000; // 2 seconds base
+
+                                const attemptSync = async () => {
+                                  try {
+                                    const response = await fetch('/api/auth/sync-user', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({})
+                                    });
+
+                                    if (response.ok) {
+                                      console.log('Successfully synced user after Hopsworks access');
+                                      return;
+                                    }
+
+                                    // If not OK, maybe retry
+                                    if (retryCount < maxRetries) {
+                                      retryCount++;
+                                      const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
+                                      console.log(`Sync failed, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+                                      setTimeout(attemptSync, delay);
+                                    } else {
+                                      console.error('Failed to sync after max retries');
+                                    }
+                                  } catch (error) {
+                                    if (retryCount < maxRetries) {
+                                      retryCount++;
+                                      const delay = baseDelay * Math.pow(2, retryCount - 1);
+                                      console.log(`Sync error, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`, error);
+                                      setTimeout(attemptSync, delay);
+                                    } else {
+                                      console.error('Failed to sync after max retries:', error);
+                                    }
                                   }
-                                  
-                                  // If not OK, maybe retry
-                                  if (retryCount < maxRetries) {
-                                    retryCount++;
-                                    const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
-                                    console.log(`Sync failed, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-                                    setTimeout(attemptSync, delay);
-                                  } else {
-                                    console.error('Failed to sync after max retries');
-                                  }
-                                } catch (error) {
-                                  if (retryCount < maxRetries) {
-                                    retryCount++;
-                                    const delay = baseDelay * Math.pow(2, retryCount - 1);
-                                    console.log(`Sync error, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`, error);
-                                    setTimeout(attemptSync, delay);
-                                  } else {
-                                    console.error('Failed to sync after max retries:', error);
-                                  }
-                                }
-                              };
-                              
-                              // Start after 1 second
-                              setTimeout(attemptSync, 1000);
+                                };
+
+                                // Start after 1 second
+                                setTimeout(attemptSync, 1000);
+                              }
                             }
-                          }
-                        }}
-                      >
-                        {instance.endpoint ? 'Access Hopsworks' : 'No Cluster Assigned'}
-                      </Button>
-                    </Flex>
+                          }}
+                        >
+                          {instance.endpoint ? 'Access Hopsworks' : 'No Cluster Assigned'}
+                        </Button>
+                      </div>
                     </Card>
                   )}
-                  
+
                   {/* Quick Start Code */}
                   <Card className="p-6 mb-6">
-                    <Title as="h3" className="text-lg mb-4">Quick Start - Connect from VS Code</Title>
-                    
-                    <Text className="text-sm text-gray-600 mb-4">
-                      Connect to your Hopsworks cluster from VS Code, Jupyter notebooks, or any local environment:
-                    </Text>
+                    <h3 className="text-lg font-semibold mb-4">Quick Start - Connect from VS Code</h3>
 
-                    <Box className="relative">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Connect to your Hopsworks cluster from VS Code, Jupyter notebooks, or any local environment:
+                    </p>
+
+                    <div className="relative">
                       <Button
-                        intent="ghost"
+                        variant="ghost"
                         size="sm"
-                        className="absolute top-2 right-2 z-10"
+                        className="absolute top-2 right-2 z-10 text-gray-300 hover:text-white hover:bg-white/10"
                         onClick={() => {
                           // Extract host and port from endpoint URL if available
                           let host = 'YOUR_CLUSTER_HOST';
@@ -724,7 +803,7 @@ export default function Dashboard() {
                               // Fallback to defaults
                             }
                           }
-                          
+
                           const code = `# Install Hopsworks Python client
 !pip install "hopsworks[python]"
 
@@ -768,13 +847,15 @@ mr = project.get_model_registry()`;
                         }}
                       >
                         {copied === 'quickstart' ? (
-                          <IconLabel icon={<CheckCircle size={14} className="text-green-500" />} gap={4}>
-                            <Text className="text-xs text-white">Copied!</Text>
-                          </IconLabel>
+                          <span className="inline-flex items-center gap-1">
+                            <CheckCircle size={14} className="text-quartz-primary" />
+                            <span className="text-xs">Copied!</span>
+                          </span>
                         ) : (
-                          <IconLabel icon={<Copy size={14} className="text-gray-300" />} gap={4}>
-                            <Text className="text-xs text-white">Copy</Text>
-                          </IconLabel>
+                          <span className="inline-flex items-center gap-1">
+                            <Copy size={14} />
+                            <span className="text-xs">Copy</span>
+                          </span>
                         )}
                       </Button>
                       <pre className="overflow-x-auto p-4 text-sm bg-gray-900 text-gray-300 rounded">
@@ -844,19 +925,19 @@ mr = project.get_model_registry()`;
                           <span className="text-blue-300">mr</span> = <span className="text-blue-300">project</span>.<span className="text-yellow-300">get_model_registry</span>()
                         </code>
                       </pre>
-                    </Box>
+                    </div>
                   </Card>
 
                 </>
               ) : (
-                <Box>
+                <div>
                   {/* Empty state - ClusterAccessStatus component above already shows the setup message */}
-                </Box>
+                </div>
               )}
             </TabsContent>
 
             <TabsContent value="team">
-              <Box className="space-y-6">
+              <div className="space-y-6">
                 {teamLoading ? (
                   <>
                     <CardSkeleton rows={4} />
@@ -866,53 +947,54 @@ mr = project.get_model_registry()`;
                   <>
                     {/* Team Members Card */}
                     <Card className="p-6">
-                      <Flex align="center" gap={12} className="mb-4">
-                        <Users size={20} className="text-[#1eb182]" />
-                        <Title as="h2" className="text-lg">Team Members</Title>
-                        <Badge variant="default">{(teamData.team_members?.length || 0) + 1}</Badge>
-                      </Flex>
+                      <div className="flex items-center gap-3 mb-4">
+                        <Users size={20} className="text-primary" />
+                        <h2 className="text-lg font-semibold">Team Members</h2>
+                        <Badge variant="secondary">{(teamData.team_members?.length || 0) + 1}</Badge>
+                      </div>
 
-                      <Flex direction="column" gap={12}>
+                      <div className="flex flex-col gap-3">
                         {/* Account Owner */}
-                        <Card variant="readOnly" className="p-4">
-                          <Flex justify="between" align="center">
-                            <Box>
-                              <Flex align="center" gap={8}>
-                                <Text className="font-medium">{teamData.account_owner.name || teamData.account_owner.email}</Text>
-                                <Badge variant="primary" size="sm">Owner</Badge>
-                              </Flex>
-                              <Text className="text-sm text-gray-600">{teamData.account_owner.email}</Text>
-                            </Box>
-                          </Flex>
+                        <Card variant="muted" className="p-4">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{teamData.account_owner.name || teamData.account_owner.email}</span>
+                                <Badge variant="default">Owner</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">{teamData.account_owner.email}</p>
+                            </div>
+                          </div>
                         </Card>
 
                         {/* Team Members */}
                         {teamData.team_members?.map((member) => (
-                          <Card key={member.id} variant="readOnly" className="p-4">
-                            <Box>
-                              <Flex justify="between" align="center">
-                                <Box>
-                                  <Text className="font-medium">{member.name || member.email}</Text>
+                          <Card key={member.id} variant="muted" className="p-4">
+                            <div>
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="font-medium">{member.name || member.email}</p>
                                   {member.name && member.name !== member.email && (
-                                    <Text className="text-sm text-gray-600">{member.email}</Text>
+                                    <p className="text-sm text-muted-foreground">{member.email}</p>
                                   )}
-                                </Box>
-                                <Flex align="center" gap={12}>
+                                </div>
+                                <div className="flex items-center gap-3">
                                   {member.last_login_at && (
-                                    <Text className="text-xs text-gray-500">
+                                    <span className="text-xs text-muted-foreground">
                                       Last login: {new Date(member.last_login_at).toLocaleDateString()}
-                                    </Text>
+                                    </span>
                                   )}
                                   <Button
-                                    intent="ghost"
-                                    size="md"
+                                    variant="ghost"
+                                    size="icon-sm"
                                     onClick={() => handleRemoveMember(member.id)}
+                                    aria-label="Remove member"
                                   >
-                                    <Trash2 size={16} className="text-red-500" />
+                                    <Trash2 size={16} className="text-destructive" />
                                   </Button>
-                                </Flex>
-                              </Flex>
-                              <Box className="mt-4">
+                                </div>
+                              </div>
+                              <div className="mt-4">
                                 <TeamMemberProjects
                                   memberId={member.id}
                                   memberEmail={member.email}
@@ -920,90 +1002,91 @@ mr = project.get_model_registry()`;
                                   hopsworksUsername={member.hopsworks_username}
                                   projects={member.project_member_roles}
                                 />
-                              </Box>
-                            </Box>
+                              </div>
+                            </div>
                           </Card>
                         ))}
-                      </Flex>
+                      </div>
 
-                      <Box className="mt-4">
-                        <Button
-                          intent="primary"
-                          size="md"
-                          onClick={() => setShowInviteModal(true)}
-                        >
+                      <div className="mt-4">
+                        <Button onClick={() => setShowInviteModal(true)}>
                           Invite Member
                         </Button>
-                      </Box>
+                      </div>
                     </Card>
 
                     {/* Pending Invites */}
                     {invites.length > 0 && (
                       <Card className="p-6">
-                        <Flex align="center" gap={12} className="mb-4">
-                          <Mail size={20} className="text-[#1eb182]" />
-                          <Title as="h2" className="text-lg">Pending Invites</Title>
-                          <Badge variant="default">{invites.length}</Badge>
-                        </Flex>
+                        <div className="flex items-center gap-3 mb-4">
+                          <Mail size={20} className="text-primary" />
+                          <h2 className="text-lg font-semibold">Pending Invites</h2>
+                          <Badge variant="secondary">{invites.length}</Badge>
+                        </div>
 
-                        <Flex direction="column" gap={12}>
+                        <div className="flex flex-col gap-3">
                           {invites.map((invite) => {
                             const expiresAt = new Date(invite.expires_at);
                             const isExpired = expiresAt < new Date();
-                            
+
                             return (
-                              <Card key={invite.id} variant="readOnly" className="p-4">
-                                <Flex justify="between" align="center">
-                                  <Box>
-                                    <Text className="font-medium">{invite.email}</Text>
-                                    <Flex align="center" gap={8} className="mt-1">
-                                      <Clock size={12} className="text-gray-500" />
-                                      <Text className="text-xs text-gray-500">
+                              <Card key={invite.id} variant="muted" className="p-4">
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="font-medium">{invite.email}</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <Clock size={12} className="text-muted-foreground" />
+                                      <span className="text-xs text-muted-foreground">
                                         {isExpired ? 'Expired' : `Expires ${expiresAt.toLocaleDateString()}`}
-                                      </Text>
-                                    </Flex>
-                                  </Box>
-                                  <Flex align="center" gap={8}>
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
                                     <Button
-                                      intent="ghost"
-                                      size="md"
+                                      variant="ghost"
+                                      size="icon-sm"
                                       onClick={() => copyInviteLink(invite.token)}
                                       disabled={isExpired}
+                                      aria-label="Copy invite link"
                                     >
                                       <Copy size={16} />
                                     </Button>
                                     <Button
-                                      intent="ghost"
-                                      size="md"
+                                      variant="ghost"
+                                      size="icon-sm"
                                       onClick={() => handleCancelInvite(invite.id)}
+                                      aria-label="Cancel invite"
                                     >
-                                      <Trash2 size={16} className="text-red-500" />
+                                      <Trash2 size={16} className="text-destructive" />
                                     </Button>
-                                  </Flex>
-                                </Flex>
+                                  </div>
+                                </div>
                               </Card>
                             );
                           })}
-                        </Flex>
+                        </div>
                       </Card>
                     )}
                   </>
                 ) : (
                   <>
                     {/* Team Member View */}
-                    <Card className="p-6 border-blue-200 bg-blue-50">
-                      <Text className="text-sm">
-                        You are part of <strong>{teamData?.account_owner.email}</strong>&apos;s team. 
+                    <StatusBox
+                      tone="info"
+                      icon={<Users size={20} className="text-quartz-label-blue mt-0.5" />}
+                    >
+                      <p className="text-sm">
+                        You are part of <strong>{teamData?.account_owner.email}</strong>&apos;s team.
                         Your usage is billed to the account owner.
-                      </Text>
-                    </Card>
-                    
+                      </p>
+                    </StatusBox>
+
                     {/* Show team member's own projects */}
                     <Card className="p-6">
-                      <Flex align="center" gap={12} className="mb-4">
-                        <FolderOpen size={20} className="text-[#1eb182]" />
-                        <Title as="h2" className="text-lg">My Project Access</Title>
-                      </Flex>
+                      <div className="flex items-center gap-3 mb-4">
+                        <FolderOpen size={20} className="text-primary" />
+                        <h2 className="text-lg font-semibold">My Project Access</h2>
+                      </div>
                       <TeamMemberProjects
                         memberId={user?.sub || ''}
                         memberEmail={user?.email || ''}
@@ -1015,242 +1098,242 @@ mr = project.get_model_registry()`;
                     {/* Other Team Members */}
                     {teamData?.team_members && teamData.team_members.length > 0 && (
                       <Card className="p-6">
-                        <Flex align="center" gap={12} className="mb-4">
-                          <Users size={20} className="text-[#1eb182]" />
-                          <Title as="h2" className="text-lg">Team Members</Title>
-                        </Flex>
-                        
-                        <Flex direction="column" gap={12}>
+                        <div className="flex items-center gap-3 mb-4">
+                          <Users size={20} className="text-primary" />
+                          <h2 className="text-lg font-semibold">Team Members</h2>
+                        </div>
+
+                        <div className="flex flex-col gap-3">
                           {/* Owner */}
-                          <Card variant="readOnly" className="p-4">
-                            <Flex justify="between" align="center">
-                              <Box>
-                                <Flex align="center" gap={8}>
-                                  <Text className="font-medium">{teamData.account_owner.name || teamData.account_owner.email}</Text>
-                                  <Badge variant="primary" size="sm">Owner</Badge>
-                                </Flex>
-                                <Text className="text-sm text-gray-600">{teamData.account_owner.email}</Text>
-                              </Box>
-                            </Flex>
+                          <Card variant="muted" className="p-4">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{teamData.account_owner.name || teamData.account_owner.email}</span>
+                                  <Badge variant="default">Owner</Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{teamData.account_owner.email}</p>
+                              </div>
+                            </div>
                           </Card>
 
                           {/* Other Members */}
                           {teamData.team_members.map((member) => (
-                            <Card key={member.id} variant="readOnly" className="p-4">
-                              <Box>
-                                <Text className="font-medium">{member.name || member.email}</Text>
-                                <Text className="text-sm text-gray-600">{member.email}</Text>
-                              </Box>
+                            <Card key={member.id} variant="muted" className="p-4">
+                              <div>
+                                <p className="font-medium">{member.name || member.email}</p>
+                                <p className="text-sm text-muted-foreground">{member.email}</p>
+                              </div>
                             </Card>
                           ))}
-                        </Flex>
+                        </div>
                       </Card>
                     )}
                   </>
                 )}
-              </Box>
+              </div>
             </TabsContent>
 
             <TabsContent value="billing">
               {billingLoading ? (
-                <Box className="space-y-6">
-                  <CardSkeleton rows={4} className="border-[#1eb182] border-2" />
+                <div className="space-y-6">
+                  <CardSkeleton rows={4} className="border-primary border-2" />
                   <CardSkeleton rows={3} />
                   <CardSkeleton rows={5} />
                   <CardSkeleton rows={2} />
-                </Box>
+                </div>
               ) : billing ? (
                 <>
                   {/* Team member billing notice */}
                   {billing.isTeamMember ? (
-                    <Card className="p-6 border-blue-200 bg-blue-50">
-                      <Flex align="center" gap={12}>
-                        <Users size={20} className="text-blue-600" />
-                        <Box className="flex-1">
-                          <Text className="text-sm text-blue-800">
-                            Your usage is billed to <strong>{billing.accountOwner?.name || billing.accountOwner?.email}</strong>. 
-                            Contact your account owner for billing information.
-                          </Text>
-                        </Box>
-                      </Flex>
-                    </Card>
+                    <StatusBox
+                      tone="info"
+                      icon={<Users size={20} className="text-quartz-label-blue mt-0.5" />}
+                    >
+                      <p className="text-sm">
+                        Your usage is billed to <strong>{billing.accountOwner?.name || billing.accountOwner?.email}</strong>.
+                        Contact your account owner for billing information.
+                      </p>
+                    </StatusBox>
                   ) : (
                     <>
                       {/* Period Total Summary */}
                       {billing.historicalUsage && billing.historicalUsage.length > 0 && (
-                        <Card className="p-6 mb-6 border-[#1eb182] border-2">
-                          <Flex justify="between" align="center">
-                            <Box>
-                              <Title as="h2" className="text-2xl">Total</Title>
-                              <Text className="text-sm text-gray-600">
-                                {selectedMonth === 'current' ? 'Last 30 days' : 
+                        <Card className="p-6 mb-6 border-primary border-2">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h2 className="text-2xl font-semibold">Total</h2>
+                              <p className="text-sm text-muted-foreground">
+                                {selectedMonth === 'current' ? 'Last 30 days' :
                                   new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                              </Text>
-                            </Box>
-                            <Text className="text-3xl font-bold text-[#1eb182]">
+                              </p>
+                            </div>
+                            <span className="text-3xl font-bold text-primary">
                               ${billing.historicalUsage.reduce((sum, day) => sum + day.total_cost, 0).toFixed(2)}
-                            </Text>
-                          </Flex>
+                            </span>
+                          </div>
                         </Card>
                       )}
 
                       {/* Low balance warnings */}
                       {!billing.hasPaymentMethod && billing.billingMode === 'postpaid' && (
-                        <Card className="p-6 mb-6 border-yellow-500 bg-yellow-50">
-                          <Flex align="center" gap={12}>
-                            <AlertTriangle size={20} className="text-yellow-600" />
-                            <Box>
-                              <Title as="h3" className="text-sm">Add Payment Method Required</Title>
-                              <Text className="text-xs text-gray-600">
-                                Add a credit card to start using Hopsworks resources
-                              </Text>
-                            </Box>
-                          </Flex>
-                        </Card>
+                        <StatusBox
+                          tone="warning"
+                          icon={<AlertTriangle size={20} className="text-quartz-label-orange mt-0.5" />}
+                          className="mb-6"
+                        >
+                          <h3 className="text-sm font-semibold">Add Payment Method Required</h3>
+                          <p className="text-xs opacity-80 mt-1">
+                            Add a credit card to start using Hopsworks resources
+                          </p>
+                        </StatusBox>
                       )}
-                      
+
                       {billing.billingMode === 'prepaid' && billing.creditBalance && billing.creditBalance.total < 10 && (
-                        <Card className="p-6 mb-6 border-yellow-500 bg-yellow-50">
-                          <Flex align="center" gap={12}>
-                            <AlertTriangle size={20} className="text-yellow-600" />
-                            <Box>
-                              <Title as="h3" className="text-sm">Low Credit Balance</Title>
-                              <Text className="text-xs text-gray-600">
-                                Your credit balance is running low. Purchase more credits to avoid service interruption.
-                              </Text>
-                            </Box>
-                          </Flex>
-                        </Card>
+                        <StatusBox
+                          tone="warning"
+                          icon={<AlertTriangle size={20} className="text-quartz-label-orange mt-0.5" />}
+                          className="mb-6"
+                        >
+                          <h3 className="text-sm font-semibold">Low Credit Balance</h3>
+                          <p className="text-xs opacity-80 mt-1">
+                            Your credit balance is running low. Purchase more credits to avoid service interruption.
+                          </p>
+                        </StatusBox>
                       )}
 
                       {/* Current Month Usage */}
                       <Card className="p-6 mb-6">
-                        <Flex align="center" gap={12} className="mb-4">
-                          <Activity size={20} className="text-[#1eb182]" />
-                          <Title as="h2" className="text-lg">Current Month Usage</Title>
-                        </Flex>
-                        
-                        <Flex gap={16} className="grid grid-cols-1 md:grid-cols-3 mb-4">
-                          <Box>
-                            <Text className="text-sm text-gray-600">Compute</Text>
-                            <Text className="text-xl font-semibold">
+                        <div className="flex items-center gap-3 mb-4">
+                          <Activity size={20} className="text-primary" />
+                          <h2 className="text-lg font-semibold">Current Month Usage</h2>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Compute</p>
+                            <p className="text-xl font-semibold">
                               ${billing.currentUsage.currentMonth.computeCost.toFixed(2)}
-                            </Text>
-                            <Text className="text-xs text-gray-500">
+                            </p>
+                            <p className="text-xs text-muted-foreground">
                               CPU: {billing.currentUsage.cpuHours}h
                               {parseFloat(billing.currentUsage.gpuHours) > 0 && ` | GPU: ${billing.currentUsage.gpuHours}h`}
                               {parseFloat(billing.currentUsage.ramGbHours) > 0 && ` | RAM: ${parseFloat(billing.currentUsage.ramGbHours).toFixed(0)}GB·h`}
-                            </Text>
-                          </Box>
-                          <Box>
-                            <Text className="text-sm text-gray-600">Storage</Text>
-                            <Text className="text-xl font-semibold">
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Storage</p>
+                            <p className="text-xl font-semibold">
                               ${billing.currentUsage.currentMonth.storageCost.toFixed(2)}
-                            </Text>
-                            <Text className="text-xs text-gray-500">
+                            </p>
+                            <p className="text-xs text-muted-foreground">
                               Online: {billing.currentUsage.onlineStorageGB || '0.00GB'} | Offline: {billing.currentUsage.offlineStorageGB || '0.00GB'}
-                            </Text>
-                          </Box>
-                          <Box>
-                            <Text className="text-sm text-gray-600">Month Total</Text>
-                            <Text className="text-xl font-semibold">
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Month Total</p>
+                            <p className="text-xl font-semibold">
                               ${billing.currentUsage.currentMonth.total.toFixed(2)}
-                            </Text>
-                            <Text className="text-sm text-gray-500">
+                            </p>
+                            <p className="text-sm text-muted-foreground">
                               {billing.billingMode === 'prepaid' ? 'This month' : 'Estimated'}
-                            </Text>
-                          </Box>
-                        </Flex>
-                        
+                            </p>
+                          </div>
+                        </div>
+
                         {/* Usage collection info */}
-                        <Box className="mt-3 pt-3 border-t border-gray-100">
-                          <Text className="text-xs text-gray-500">
+                        <div className="mt-3 pt-3 border-t border-border">
+                          <p className="text-xs text-muted-foreground">
                             Last update: {usage?.lastUpdate ? new Date(usage.lastUpdate).toLocaleTimeString() : 'Never'}
-                          </Text>
-                        </Box>
+                          </p>
+                        </div>
                       </Card>
 
                       {/* Spending Cap */}
                       <Card className="p-6 mb-6">
-                        <Flex align="center" gap={12} className="mb-4">
-                          <AlertTriangle size={20} className="text-[#1eb182]" />
-                          <Title as="h2" className="text-lg">Spending Cap</Title>
-                          <Badge variant={spendingCapEnabled ? 'success' : 'default'} size="sm">
+                        <div className="flex items-center gap-3 mb-4">
+                          <AlertTriangle size={20} className="text-primary" />
+                          <h2 className="text-lg font-semibold">Spending Cap</h2>
+                          <Badge variant={spendingCapEnabled ? 'success' : 'secondary'}>
                             {spendingCapEnabled ? 'Active' : 'Disabled'}
                           </Badge>
-                        </Flex>
+                        </div>
 
-                        <Text className="text-sm text-gray-600 mb-4">
+                        <p className="text-sm text-muted-foreground mb-4">
                           Set a monthly spending cap to receive alerts at 80%, 90%, and 100% of your limit.
                           This is a soft cap - your services will continue running.
-                        </Text>
+                        </p>
 
                         {/* Progress bar when cap is enabled */}
                         {spendingCapEnabled && billing.spendingCap && (
-                          <Box className="mb-4">
-                            <Flex justify="between" className="mb-2">
-                              <Text className="text-sm text-gray-600">
+                          <div className="mb-4">
+                            <div className="flex justify-between mb-2">
+                              <span className="text-sm text-muted-foreground">
                                 ${billing.currentUsage.currentMonth.total.toFixed(2)} of ${billing.spendingCap.toFixed(2)}
-                              </Text>
-                              <Text className={`text-sm font-medium ${
+                              </span>
+                              <span className={cn(
+                                'text-sm font-medium',
                                 (billing.currentUsage.currentMonth.total / billing.spendingCap) >= 1
-                                  ? 'text-red-600'
+                                  ? 'text-destructive'
                                   : (billing.currentUsage.currentMonth.total / billing.spendingCap) >= 0.9
-                                    ? 'text-orange-500'
-                                    : 'text-[#1eb182]'
-                              }`}>
+                                    ? 'text-quartz-label-orange'
+                                    : 'text-primary',
+                              )}>
                                 {Math.round((billing.currentUsage.currentMonth.total / billing.spendingCap) * 100)}%
-                              </Text>
-                            </Flex>
+                              </span>
+                            </div>
                             {/* Progress bar with threshold markers */}
-                            <Box className="relative">
-                              <Box className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                <Box
-                                  className={`h-3 rounded-full transition-all ${
+                            <div className="relative">
+                              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                                <div
+                                  className={cn(
+                                    'h-3 rounded-full transition-all',
                                     (billing.currentUsage.currentMonth.total / billing.spendingCap) >= 1
-                                      ? 'bg-red-500'
+                                      ? 'bg-destructive'
                                       : (billing.currentUsage.currentMonth.total / billing.spendingCap) >= 0.9
-                                        ? 'bg-orange-500'
+                                        ? 'bg-quartz-label-orange'
                                         : (billing.currentUsage.currentMonth.total / billing.spendingCap) >= 0.8
-                                          ? 'bg-yellow-500'
-                                          : 'bg-[#1eb182]'
-                                  }`}
+                                          ? 'bg-quartz-label-yellow'
+                                          : 'bg-primary',
+                                  )}
                                   style={{ width: `${Math.min(100, (billing.currentUsage.currentMonth.total / billing.spendingCap) * 100)}%` }}
                                 />
-                              </Box>
+                              </div>
                               {/* Threshold markers at 80% and 90% */}
-                              <Box className="absolute top-0 left-[80%] w-px h-3 bg-gray-400/50" />
-                              <Box className="absolute top-0 left-[90%] w-px h-3 bg-gray-400/50" />
+                              <div className="absolute top-0 left-[80%] w-px h-3 bg-quartz-gray/50" />
+                              <div className="absolute top-0 left-[90%] w-px h-3 bg-quartz-gray/50" />
                               {/* Labels */}
-                              <Text className="absolute -bottom-5 left-0 text-xs text-gray-400">$0</Text>
-                              <Text className="absolute -bottom-5 left-[80%] -translate-x-1/2 text-xs text-gray-400">80%</Text>
-                              <Text className="absolute -bottom-5 left-[90%] -translate-x-1/2 text-xs text-gray-400">90%</Text>
-                              <Text className="absolute -bottom-5 right-0 text-xs text-gray-400">${billing.spendingCap.toFixed(0)}</Text>
-                            </Box>
+                              <span className="absolute -bottom-5 left-0 text-xs text-muted-foreground">$0</span>
+                              <span className="absolute -bottom-5 left-[80%] -translate-x-1/2 text-xs text-muted-foreground">80%</span>
+                              <span className="absolute -bottom-5 left-[90%] -translate-x-1/2 text-xs text-muted-foreground">90%</span>
+                              <span className="absolute -bottom-5 right-0 text-xs text-muted-foreground">${billing.spendingCap.toFixed(0)}</span>
+                            </div>
                             {/* Spacer for labels */}
-                            <Box className="h-5" />
-                          </Box>
+                            <div className="h-5" />
+                          </div>
                         )}
 
-                        <Flex gap={12} align="end">
-                          <Box className="flex-1">
-                            <label className="flex items-center mb-2">
-                              <input
-                                type="checkbox"
+                        <div className="flex items-end gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Checkbox
+                                id="spending-cap-enabled"
                                 checked={spendingCapEnabled}
-                                onChange={(e) => {
-                                  setSpendingCapEnabled(e.target.checked);
-                                  if (!e.target.checked) {
+                                onCheckedChange={(checked) => {
+                                  const next = checked === true;
+                                  setSpendingCapEnabled(next);
+                                  if (!next) {
                                     setSpendingCapInput('');
                                   }
                                 }}
-                                className="mr-2"
                               />
-                              <Text className="text-sm font-medium">Enable monthly spending cap (USD)</Text>
-                            </label>
+                              <Label htmlFor="spending-cap-enabled" className="text-sm font-medium">
+                                Enable monthly spending cap (USD)
+                              </Label>
+                            </div>
                             {spendingCapEnabled && (
-                              <Flex align="center" gap={8}>
-                                <Text className="text-lg font-medium text-gray-500">$</Text>
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg font-medium text-muted-foreground">$</span>
                                 <Input
                                   type="number"
                                   value={spendingCapInput}
@@ -1259,47 +1342,47 @@ mr = project.get_model_registry()`;
                                   min="1"
                                   step="1"
                                 />
-                              </Flex>
+                              </div>
                             )}
-                          </Box>
+                          </div>
                           <Button
-                            intent="primary"
-                            size="md"
                             onClick={handleSaveSpendingCap}
                             disabled={savingSpendingCap || (spendingCapEnabled && (!spendingCapInput || parseFloat(spendingCapInput) <= 0))}
+                            loading={savingSpendingCap}
                           >
                             {savingSpendingCap ? 'Saving...' : 'Save'}
                           </Button>
-                        </Flex>
+                        </div>
                       </Card>
 
                       {/* Usage Trend Chart */}
                       {billing.historicalUsage && billing.historicalUsage.length > 0 && (
                         <Card className="p-6 mb-6">
-                          <Flex justify="between" align="center" className="mb-4">
-                            <Flex align="center" gap={12}>
-                              <TrendingUp size={20} className="text-[#1eb182]" />
-                              <Title as="h2" className="text-lg">Usage Trend</Title>
-                            </Flex>
-                            <Select
-                              value={selectedMonth}
-                              onChange={(e) => setSelectedMonth(e.target.value)}
-                              className="w-48"
-                            >
-                              <option value="current">Last 30 days</option>
-                              {Array.from({ length: 6 }, (_, i) => {
-                                const date = new Date();
-                                date.setMonth(date.getMonth() - i);
-                                const value = date.toISOString().slice(0, 7);
-                                const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                                return <option key={value} value={value}>{label}</option>;
-                              })}
+                          <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center gap-3">
+                              <TrendingUp size={20} className="text-primary" />
+                              <h2 className="text-lg font-semibold">Usage Trend</h2>
+                            </div>
+                            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                              <SelectTrigger className="w-48">
+                                <SelectValue placeholder="Select period" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="current">Last 30 days</SelectItem>
+                                {Array.from({ length: 6 }, (_, i) => {
+                                  const date = new Date();
+                                  date.setMonth(date.getMonth() - i);
+                                  const value = date.toISOString().slice(0, 7);
+                                  const label = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                                  return <SelectItem key={value} value={value}>{label}</SelectItem>;
+                                })}
+                              </SelectContent>
                             </Select>
-                          </Flex>
-                          
-                          <Box className="h-64">
+                          </div>
+
+                          <div className="h-64">
                             <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart 
+                              <AreaChart
                                 data={billing.historicalUsage.map(day => ({
                                   date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                                   cost: day.total_cost,
@@ -1315,18 +1398,18 @@ mr = project.get_model_registry()`;
                                   </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                                <XAxis 
-                                  dataKey="date" 
+                                <XAxis
+                                  dataKey="date"
                                   tick={{ fontSize: 12 }}
                                   stroke="#6b7280"
                                 />
-                                <YAxis 
+                                <YAxis
                                   tick={{ fontSize: 12 }}
                                   stroke="#6b7280"
                                   tickFormatter={(value) => `$${value}`}
                                 />
-                                <Tooltip 
-                                  contentStyle={{ 
+                                <Tooltip
+                                  contentStyle={{
                                     backgroundColor: 'white',
                                     border: '1px solid #e5e7eb',
                                     borderRadius: '8px',
@@ -1334,24 +1417,24 @@ mr = project.get_model_registry()`;
                                   }}
                                   formatter={(value: number) => [`$${value.toFixed(2)}`, 'Daily Cost']}
                                 />
-                                <Area 
-                                  type="monotone" 
-                                  dataKey="cost" 
-                                  stroke="#1eb182" 
-                                  fillOpacity={1} 
-                                  fill="url(#colorCost)" 
+                                <Area
+                                  type="monotone"
+                                  dataKey="cost"
+                                  stroke="#1eb182"
+                                  fillOpacity={1}
+                                  fill="url(#colorCost)"
                                   strokeWidth={2}
                                 />
                               </AreaChart>
                             </ResponsiveContainer>
-                          </Box>
-                          
-                          <Flex gap={16} className="mt-4">
-                            <Flex align="center" gap={8}>
-                              <Box className="w-3 h-3 bg-[#1eb182] rounded-full" />
-                              <Text className="text-xs text-gray-600">Daily Cost</Text>
-                            </Flex>
-                          </Flex>
+                          </div>
+
+                          <div className="flex gap-4 mt-4">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 bg-primary rounded-full" />
+                              <span className="text-xs text-muted-foreground">Daily Cost</span>
+                            </div>
+                          </div>
                         </Card>
                       )}
 
@@ -1360,37 +1443,36 @@ mr = project.get_model_registry()`;
 
                       {/* Payment Method */}
                       <Card className="p-6 mb-6">
-                        <Flex align="center" gap={12} className="mb-4">
-                          <CreditCard size={20} className="text-[#1eb182]" />
-                          <Title as="h2" className="text-lg">Payment Method</Title>
-                        </Flex>
-                        
+                        <div className="flex items-center gap-3 mb-4">
+                          <CreditCard size={20} className="text-primary" />
+                          <h2 className="text-lg font-semibold">Payment Method</h2>
+                        </div>
+
                         {billing.hasPaymentMethod ? (
-                          <Box className="space-y-3">
+                          <div className="space-y-3">
                             {billing.paymentMethodDetails?.card && (
-                              <Card variant="readOnly" className="p-4">
-                                <Flex justify="between" align="center">
-                                  <Flex align="center" gap={12}>
-                                    <CreditCard size={18} className="text-gray-500" />
-                                    <Box>
-                                      <Text className="text-sm font-medium capitalize">
+                              <Card variant="muted" className="p-4">
+                                <div className="flex justify-between items-center">
+                                  <div className="flex items-center gap-3">
+                                    <CreditCard size={18} className="text-muted-foreground" />
+                                    <div>
+                                      <p className="text-sm font-medium capitalize">
                                         {billing.paymentMethodDetails.card.brand} •••• {billing.paymentMethodDetails.card.last4}
-                                      </Text>
-                                      <Text className="text-xs text-gray-500">
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
                                         Expires {String(billing.paymentMethodDetails.card.expMonth).padStart(2, '0')}/{billing.paymentMethodDetails.card.expYear}
-                                      </Text>
-                                    </Box>
-                                  </Flex>
-                                  <Badge variant="success" size="sm">Active</Badge>
-                                </Flex>
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Badge variant="success">Active</Badge>
+                                </div>
                               </Card>
                             )}
                             {!billing.paymentMethodDetails && (
-                              <Text className="text-sm text-gray-600">Payment method on file</Text>
+                              <p className="text-sm text-muted-foreground">Payment method on file</p>
                             )}
                             <Button
-                              intent="ghost"
-                              size="md"
+                              variant="ghost"
                               onClick={async () => {
                                 try {
                                   const response = await fetch('/api/billing/setup-payment', {
@@ -1402,21 +1484,18 @@ mr = project.get_model_registry()`;
                                   }
                                 } catch (error) {
                                   console.error('Failed to open billing portal:', error);
-                                  alert('Failed to open billing portal. Please try again.');
+                                  toast.error('Failed to open billing portal. Please try again.');
                                 }
                               }}
                             >
-                              <IconLabel icon={<ExternalLink size={16} />} gap={8}>
-                                Manage Payment Methods
-                              </IconLabel>
+                              <ExternalLink size={16} />
+                              Manage Payment Methods
                             </Button>
-                          </Box>
+                          </div>
                         ) : (
-                          <Box className="space-y-3">
-                            <Text className="text-sm text-gray-600">No payment methods added yet.</Text>
+                          <div className="space-y-3">
+                            <p className="text-sm text-muted-foreground">No payment methods added yet.</p>
                             <Button
-                              intent="primary"
-                              size="md"
                               onClick={async () => {
                                 try {
                                   const response = await fetch('/api/billing/setup-payment', {
@@ -1430,69 +1509,58 @@ mr = project.get_model_registry()`;
                                   }
                                 } catch (error) {
                                   console.error('Failed to set up payment:', error);
-                                  alert('Failed to set up payment. Please try again.');
+                                  toast.error('Failed to set up payment. Please try again.');
                                 }
                               }}
                             >
                               Add Payment Method
                             </Button>
-                          </Box>
+                          </div>
                         )}
                       </Card>
 
                       {/* Invoices */}
                       {billing.hasPaymentMethod && (
                         <Card className="p-6 mb-6">
-                          <Flex align="center" gap={12} className="mb-4">
-                            <Calendar size={20} className="text-[#1eb182]" />
-                            <Title as="h2" className="text-lg">Recent Invoices</Title>
-                          </Flex>
-                          
+                          <div className="flex items-center gap-3 mb-4">
+                            <Calendar size={20} className="text-primary" />
+                            <h2 className="text-lg font-semibold">Recent Invoices</h2>
+                          </div>
+
                           {billing.invoices && billing.invoices.length > 0 ? (
                             <>
-                              <Box className="space-y-2">
+                              <div className="space-y-2">
                                 {billing.invoices.slice(0, 5).map(invoice => {
-                                  const statusVariant =
+                                  const statusVariant: 'success' | 'notice' | 'secondary' | 'fail' =
                                     invoice.status === 'paid' ? 'success' :
-                                    invoice.status === 'open' ? 'warning' :
+                                    invoice.status === 'open' ? 'notice' :
                                     invoice.status === 'draft' ? 'secondary' :
-                                    invoice.status === 'void' ? 'error' : 'secondary';
-
-                                  // Check what we actually have
-                                  console.log('Invoice data:', {
-                                    id: invoice.id,
-                                    invoice_number: invoice.invoice_number,
-                                    status: invoice.status,
-                                    invoice_url: invoice.invoice_url,
-                                    pdf_url: invoice.pdf_url,
-                                    amount: invoice.amount,
-                                    total: invoice.total
-                                  });
+                                    invoice.status === 'void' ? 'fail' : 'secondary';
 
                                   return (
-                                    <Flex key={invoice.id} justify="between" align="center" className="py-2 border-b border-gray-100 last:border-0">
-                                      <Box>
+                                    <div key={invoice.id} className="flex justify-between items-center py-2 border-b border-border last:border-0">
+                                      <div>
                                         {invoice.invoice_url ? (
                                           <a
                                             href={invoice.invoice_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                                            className="text-sm font-medium text-quartz-label-blue hover:underline"
                                           >
                                             {invoice.invoice_number || 'View Invoice'}
                                           </a>
                                         ) : (
-                                          <Text className="text-sm font-medium">{invoice.invoice_number || invoice.id}</Text>
+                                          <p className="text-sm font-medium">{invoice.invoice_number || invoice.id}</p>
                                         )}
-                                        <Text className="text-xs text-gray-500">
+                                        <p className="text-xs text-muted-foreground">
                                           {new Date(invoice.created_at).toLocaleDateString()}
-                                        </Text>
-                                      </Box>
-                                      <Flex align="center" gap={12}>
-                                        <Text className="text-sm font-medium">
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-sm font-medium">
                                           ${(invoice.total ?? invoice.amount ?? 0).toFixed(2)}
-                                        </Text>
-                                        <Badge variant={statusVariant as any} size="sm">
+                                        </span>
+                                        <Badge variant={statusVariant}>
                                           {invoice.status || 'Unknown'}
                                         </Badge>
                                         {invoice.pdf_url && (
@@ -1500,7 +1568,7 @@ mr = project.get_model_registry()`;
                                             href={invoice.pdf_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                                             title="Download PDF"
                                           >
                                             <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1509,14 +1577,13 @@ mr = project.get_model_registry()`;
                                             </svg>
                                           </a>
                                         )}
-                                      </Flex>
-                                    </Flex>
+                                      </div>
+                                    </div>
                                   );
                                 })}
-                              </Box>
+                              </div>
                               <Button
-                                intent="ghost"
-                                size="md"
+                                variant="ghost"
                                 className="mt-3"
                                 onClick={async () => {
                                   try {
@@ -1529,38 +1596,37 @@ mr = project.get_model_registry()`;
                                     }
                                   } catch (error) {
                                     console.error('Failed to open billing portal:', error);
-                                    alert('Failed to open billing portal. Please try again.');
+                                    toast.error('Failed to open billing portal. Please try again.');
                                   }
                                 }}
                               >
-                                <IconLabel icon={<ExternalLink size={16} />} gap={8}>
-                                  View All Invoices
-                                </IconLabel>
+                                <ExternalLink size={16} />
+                                View All Invoices
                               </Button>
                             </>
                           ) : (
-                            <Text className="text-sm text-gray-500">No invoices yet</Text>
+                            <p className="text-sm text-muted-foreground">No invoices yet</p>
                           )}
                         </Card>
                       )}
 
                       {/* Pricing Info */}
                       <Card className="p-6">
-                        <Title as="h2" className="text-lg mb-3">Pay-As-You-Go Pricing</Title>
-                        <Box className="space-y-2 text-sm">
-                          <Flex justify="between">
-                            <Text className="text-gray-600">Hops Credits</Text>
-                            <Text className="font-medium">${pricing.compute_credits.toFixed(2)} / credit</Text>
-                          </Flex>
-                          <Flex justify="between">
-                            <Text className="text-gray-600">Online Storage</Text>
-                            <Text className="font-medium">${pricing.storage_online_gb.toFixed(2)} / GB-month</Text>
-                          </Flex>
-                          <Flex justify="between">
-                            <Text className="text-gray-600">Offline Storage</Text>
-                            <Text className="font-medium">${pricing.storage_offline_gb.toFixed(3)} / GB-month</Text>
-                          </Flex>
-                        </Box>
+                        <h2 className="text-lg font-semibold mb-3">Pay-As-You-Go Pricing</h2>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Hops Credits</span>
+                            <span className="font-medium">${pricing.compute_credits.toFixed(2)} / credit</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Online Storage</span>
+                            <span className="font-medium">${pricing.storage_online_gb.toFixed(2)} / GB-month</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Offline Storage</span>
+                            <span className="font-medium">${pricing.storage_offline_gb.toFixed(3)} / GB-month</span>
+                          </div>
+                        </div>
                       </Card>
                     </>
                   )}
@@ -1570,45 +1636,43 @@ mr = project.get_model_registry()`;
 
             <TabsContent value="settings">
               <Card className="p-6 mb-6">
-                <Title as="h2" className="text-lg mb-4">Account Information</Title>
-                <Flex direction="column" gap={12}>
-                  <Box>
-                    <Text className="text-sm text-gray-600">Email</Text>
-                    <Text className="font-medium">{user.email}</Text>
-                  </Box>
-                  <Box>
-                    <Text className="text-sm text-gray-600">User ID</Text>
-                    <Text className="text-xs font-mono">{user.sub}</Text>
-                  </Box>
-                </Flex>
+                <h2 className="text-lg font-semibold mb-4">Account Information</h2>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Email</p>
+                    <p className="font-medium">{user.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">User ID</p>
+                    <p className="text-xs font-mono">{user.sub}</p>
+                  </div>
+                </div>
               </Card>
-              
+
               <Card className="p-6 mb-6">
-                <Flex align="center" gap={12} className="mb-4">
-                  <Trash2 size={20} className="text-red-500" />
-                  <Title as="h2" className="text-lg">Danger Zone</Title>
-                </Flex>
+                <div className="flex items-center gap-3 mb-4">
+                  <Trash2 size={20} className="text-destructive" />
+                  <h2 className="text-lg font-semibold">Danger Zone</h2>
+                </div>
                 {billing?.isTeamMember ? (
-                  <Box className="p-4 bg-gray-50 border border-gray-200 rounded">
-                    <Text className="text-sm text-gray-700">
+                  <div className="p-4 bg-muted border border-border rounded">
+                    <p className="text-sm text-foreground">
                       Team members cannot self-delete. Contact your account owner ({teamData?.account_owner?.email}) to be removed from the team.
-                    </Text>
-                  </Box>
+                    </p>
+                  </div>
                 ) : teamData?.team_members && teamData.team_members.length > 0 ? (
-                  <Box className="p-4 bg-gray-50 border border-gray-200 rounded">
-                    <Text className="text-sm text-gray-700">
+                  <div className="p-4 bg-muted border border-border rounded">
+                    <p className="text-sm text-foreground">
                       Cannot delete account with active team members. Remove all team members first.
-                    </Text>
-                  </Box>
+                    </p>
+                  </div>
                 ) : (
                   <>
-                    <Text className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-muted-foreground mb-4">
                       Delete your account and revoke access to all resources. Billing data will be retained for compliance.
-                    </Text>
+                    </p>
                     <Button
-                      intent="secondary"
-                      size="md"
-                      className="border-red-500 text-red-600 hover:bg-red-50 focus:ring-red-500"
+                      variant="destructive"
                       onClick={() => setShowDeleteModal(true)}
                     >
                       Delete Account
@@ -1617,357 +1681,374 @@ mr = project.get_model_registry()`;
                 )}
               </Card>
 
-              <Flex justify="center">
-                <Button 
-                  intent="ghost" 
-                  size="md"
+              <div className="flex justify-center">
+                <Button
+                  variant="ghost"
                   onClick={() => signOut()}
                 >
                   Sign Out
                 </Button>
-              </Flex>
+              </div>
             </TabsContent>
           </Tabs>
-        </Box>
+        </div>
       </Layout>
-      
+
       {/* Invite Modal */}
-      <Modal
-        isOpen={showInviteModal}
-        onClose={() => {
-          setShowInviteModal(false);
-          setInviteEmail('');
-          setInviteRole('Data scientist');
-          setAutoAssignProjects(true);
-          setInviteError('');
+      <Dialog
+        open={showInviteModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowInviteModal(false);
+            setInviteEmail('');
+            setInviteRole('Data scientist');
+            setAutoAssignProjects(true);
+            setInviteError('');
+          }
         }}
-        size="sm"
-        title="Invite Team Member"
       >
-        <Flex direction="column" gap={16}>
-          <Text className="text-sm text-gray-600">
-            Invite a new member to join your team. They&apos;ll have access to Hopsworks 
-            and their usage will be billed to your account.
-          </Text>
-          
-          <Box>
-            <Text className="text-sm font-medium mb-2">Email Address</Text>
-            <Input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              disabled={inviteLoading}
-            />
-            {inviteError && (
-              <Text className="text-xs text-red-500 mt-1">{inviteError}</Text>
-            )}
-          </Box>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite Team Member</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Invite a new member to join your team. They&apos;ll have access to Hopsworks
+              and their usage will be billed to your account.
+            </p>
 
-          <Box>
-            <Text className="text-sm font-medium mb-2">Default Project Role</Text>
-            <Select
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value)}
-              disabled={inviteLoading}
-            >
-              <option value="Data scientist">Data scientist</option>
-              <option value="Data owner">Data owner</option>
-            </Select>
-            <Text className="text-xs text-gray-500 mt-1">
-              Role they&apos;ll have when added to your projects
-            </Text>
-          </Box>
-
-          <Box>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={autoAssignProjects}
-                onChange={(e) => setAutoAssignProjects(e.target.checked)}
+            <div>
+              <Label htmlFor="invite-email" className="text-sm font-medium mb-2 block">Email Address</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@company.com"
                 disabled={inviteLoading}
-                className="mr-2"
+                intent={inviteError ? 'error' : 'default'}
               />
-              <Text className="text-sm">
-                Automatically add to all my existing projects
-              </Text>
-            </label>
-          </Box>
+              {inviteError && (
+                <p className="text-xs text-destructive mt-1">{inviteError}</p>
+              )}
+            </div>
 
-          <Flex gap={12} justify="end">
-            <Button 
-              onClick={() => {
-                setShowInviteModal(false);
-                setInviteEmail('');
-                setInviteRole('Data scientist');
-                setAutoAssignProjects(true);
-                setInviteError('');
-              }}
-              intent="secondary"
-              size="md"
-              disabled={inviteLoading}
-            >
-              Cancel
-            </Button>
-            <Button 
-              intent="primary"
-              size="md"
-              onClick={handleInvite}
-              disabled={!inviteEmail || inviteLoading}
-            >
-              {inviteLoading ? 'Sending...' : 'Send Invite'}
-            </Button>
-          </Flex>
-        </Flex>
-      </Modal>
+            <div>
+              <Label htmlFor="invite-role" className="text-sm font-medium mb-2 block">Default Project Role</Label>
+              <Select
+                value={inviteRole}
+                onValueChange={setInviteRole}
+                disabled={inviteLoading}
+              >
+                <SelectTrigger id="invite-role" className="w-full">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Data scientist">Data scientist</SelectItem>
+                  <SelectItem value="Data owner">Data owner</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Role they&apos;ll have when added to your projects
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="auto-assign-projects"
+                checked={autoAssignProjects}
+                onCheckedChange={(checked) => setAutoAssignProjects(checked === true)}
+                disabled={inviteLoading}
+              />
+              <Label htmlFor="auto-assign-projects" className="text-sm">
+                Automatically add to all my existing projects
+              </Label>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowInviteModal(false);
+                  setInviteEmail('');
+                  setInviteRole('Data scientist');
+                  setAutoAssignProjects(true);
+                  setInviteError('');
+                }}
+                disabled={inviteLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleInvite}
+                disabled={!inviteEmail || inviteLoading}
+                loading={inviteLoading}
+              >
+                {inviteLoading ? 'Sending...' : 'Send Invite'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Remove Team Member Modal */}
-      <Modal
-        isOpen={showRemoveModal}
-        onClose={() => {
-          setShowRemoveModal(false);
-          setRemovingMemberId(null);
+      <Dialog
+        open={showRemoveModal}
+        onOpenChange={(open) => {
+          if (!open && !removingMember) {
+            setShowRemoveModal(false);
+            setRemovingMemberId(null);
+          }
         }}
-        title="Remove Team Member"
       >
-        <Flex direction="column" gap={16}>
-          <Box className="p-4 bg-yellow-50 border border-yellow-200 rounded">
-            <Flex align="start" gap={8}>
-              <AlertTriangle size={20} className="text-yellow-600 flex-shrink-0 mt-0.5" />
-              <Box>
-                <Text className="text-sm font-medium text-yellow-800 mb-2">
-                  Manual action required in Hopsworks
-                </Text>
-                <Text className="text-sm text-yellow-700">
-                  This will remove the team member from your SaaS account, but you must manually remove them from your Hopsworks projects.
-                </Text>
-              </Box>
-            </Flex>
-          </Box>
-
-          <Box>
-            <Text className="text-sm text-gray-700 mb-2">
-              After removing this member:
-            </Text>
-            <Box as="ol" className="list-decimal list-inside text-sm text-gray-600 space-y-1 ml-2">
-              <li>Go to your Hopsworks cluster</li>
-              <li>Open each project they have access to</li>
-              <li>Navigate to Settings → Members</li>
-              <li>Remove the user from the project</li>
-            </Box>
-          </Box>
-
-          <Text className="text-sm text-gray-600">
-            The user will be converted to a standalone account and can create their own billing.
-          </Text>
-
-          <Flex justify="end" gap={8}>
-            <Button
-              intent="secondary"
-              size="md"
-              onClick={() => {
-                setShowRemoveModal(false);
-                setRemovingMemberId(null);
-              }}
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Team Member</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <StatusBox
+              tone="warning"
+              icon={<AlertTriangle size={20} className="text-quartz-label-orange flex-shrink-0 mt-0.5" />}
             >
-              Cancel
-            </Button>
-            <Button
-              intent="primary"
-              size="md"
-              onClick={confirmRemoveMember}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
-            >
-              Remove Member
-            </Button>
-          </Flex>
-        </Flex>
-      </Modal>
+              <p className="text-sm font-medium mb-2">
+                Manual action required in Hopsworks
+              </p>
+              <p className="text-sm">
+                This will remove the team member from your SaaS account, but you must manually remove them from your Hopsworks projects.
+              </p>
+            </StatusBox>
+
+            <div>
+              <p className="text-sm text-foreground mb-2">
+                After removing this member:
+              </p>
+              <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
+                <li>Go to your Hopsworks cluster</li>
+                <li>Open each project they have access to</li>
+                <li>Navigate to Settings &rarr; Members</li>
+                <li>Remove the user from the project</li>
+              </ol>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              The user will be converted to a standalone account and can create their own billing.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRemoveModal(false);
+                  setRemovingMemberId(null);
+                }}
+                disabled={removingMember}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmRemoveMember}
+                loading={removingMember}
+              >
+                Remove Member
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Account Modal */}
-      <Modal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeleteReason('');
+      <Dialog
+        open={showDeleteModal}
+        onOpenChange={(open) => {
+          if (!open && !deletingAccount) {
+            setShowDeleteModal(false);
+            setDeleteReason('');
+          }
         }}
-        title="Delete Account"
-        size="sm"
       >
-        <Flex direction="column" gap={16}>
-          <Box className="p-4 bg-red-50 border border-red-200 rounded">
-            <Flex align="start" gap={8}>
-              <AlertTriangle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
-              <Box>
-                <Text className="text-sm font-medium text-red-800 mb-2">
-                  This will immediately revoke access to all resources
-                </Text>
-                <Text className="text-sm text-red-700">
-                  You will be logged out and unable to access your cluster or projects.
-                </Text>
-              </Box>
-            </Flex>
-          </Box>
-
-          <Box>
-            <Text className="text-sm font-medium mb-2">Why are you deleting your account? (optional)</Text>
-            <textarea
-              value={deleteReason}
-              onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="Help us improve by sharing your reason..."
-              className="w-full p-3 border border-gray-300 rounded text-sm resize-none"
-              rows={3}
-              disabled={deletingAccount}
-            />
-          </Box>
-
-          <Flex justify="end" gap={8}>
-            <Button
-              intent="secondary"
-              size="md"
-              onClick={() => {
-                setShowDeleteModal(false);
-                setDeleteReason('');
-              }}
-              disabled={deletingAccount}
+        <DialogContent variant="destructive" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <StatusBox
+              tone="error"
+              icon={<AlertTriangle size={20} className="text-destructive flex-shrink-0 mt-0.5" />}
             >
-              Cancel
-            </Button>
-            <Button
-              intent="primary"
-              size="md"
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
-              disabled={deletingAccount}
-              onClick={async () => {
-                setDeletingAccount(true);
+              <p className="text-sm font-medium mb-2">
+                This will immediately revoke access to all resources
+              </p>
+              <p className="text-sm">
+                You will be logged out and unable to access your cluster or projects.
+              </p>
+            </StatusBox>
 
-                // Track account deletion
-                posthog.capture('account_deleted', {
-                  reason: deleteReason || 'not_provided',
-                  billingMode: billing?.billingMode,
-                  hadPaymentMethod: billing?.hasPaymentMethod,
-                });
+            <div>
+              <Label htmlFor="delete-reason" className="text-sm font-medium mb-2 block">
+                Why are you deleting your account? (optional)
+              </Label>
+              <textarea
+                id="delete-reason"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Help us improve by sharing your reason..."
+                className="w-full p-3 border border-input bg-muted rounded text-sm resize-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 outline-none disabled:opacity-50"
+                rows={3}
+                disabled={deletingAccount}
+              />
+            </div>
 
-                try {
-                  const response = await fetch('/api/account/delete', {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ reason: deleteReason || undefined })
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteReason('');
+                }}
+                disabled={deletingAccount}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deletingAccount}
+                loading={deletingAccount}
+                onClick={async () => {
+                  setDeletingAccount(true);
+
+                  // Track account deletion
+                  posthog.capture('account_deleted', {
+                    reason: deleteReason || 'not_provided',
+                    billingMode: billing?.billingMode,
+                    hadPaymentMethod: billing?.hasPaymentMethod,
                   });
 
-                  if (response.ok) {
-                    await signOut();
-                  } else {
-                    const data = await response.json();
-                    alert(data.error || 'Failed to delete account. Please try again.');
+                  try {
+                    const response = await fetch('/api/account/delete', {
+                      method: 'DELETE',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ reason: deleteReason || undefined })
+                    });
+
+                    if (response.ok) {
+                      await signOut();
+                    } else {
+                      const data = await response.json();
+                      toast.error(data.error || 'Failed to delete account. Please try again.');
+                      setDeletingAccount(false);
+                    }
+                  } catch (error) {
+                    toast.error('Failed to delete account. Please try again.');
                     setDeletingAccount(false);
                   }
-                } catch (error) {
-                  alert('Failed to delete account. Please try again.');
-                  setDeletingAccount(false);
-                }
-              }}
-            >
-              {deletingAccount ? 'Deleting...' : 'Delete Account'}
-            </Button>
-          </Flex>
-        </Flex>
-      </Modal>
+                }}
+              >
+                {deletingAccount ? 'Deleting...' : 'Delete Account'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Downgrade Warning Modal - blocking for free users with too many projects */}
-      <Modal
-        isOpen={showDowngradeModal}
-        onClose={() => {}}
-        title="Action Required"
-        size="md"
-        showCloseButton={false}
-        closeOnOverlayClick={false}
-        blur={4}
+      <Dialog
+        open={showDowngradeModal}
+        onOpenChange={() => {
+          // Blocking modal: cannot be dismissed by user. Resolution requires
+          // deleting projects or upgrading to a paid plan.
+        }}
       >
-        <Flex direction="column" gap={16}>
-          <Box className="p-4 bg-amber-50 border border-amber-200 rounded">
-            <Flex align="start" gap={8}>
-              <AlertTriangle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
-              <Box>
-                <Text className="text-sm font-medium text-amber-800 mb-2">
-                  Your account is now on the Free plan
-                </Text>
-                <Text className="text-sm text-amber-700">
-                  Free plan includes <strong>1 project only</strong>. You currently have{' '}
-                  <strong>{hopsworksInfo?.projects?.length || 0} projects</strong>.
-                </Text>
-              </Box>
-            </Flex>
-          </Box>
-
-          {billing?.downgradeDeadline && (
-            <Box className="p-3 bg-gray-50 rounded border">
-              <Text className="text-sm text-gray-700">
-                <strong>Deadline:</strong>{' '}
-                {new Date(billing.downgradeDeadline).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </Text>
-              <Text className="text-xs text-gray-500 mt-1">
-                Delete {(hopsworksInfo?.projects?.length || 0) - 1} project(s) by this date or your account will be suspended.
-              </Text>
-            </Box>
-          )}
-
-          <Box>
-            <Text className="text-sm font-medium mb-3">Your projects:</Text>
-            <Box className="space-y-2 max-h-48 overflow-y-auto">
-              {hopsworksInfo?.projects?.map((project) => (
-                <Flex key={project.id} justify="between" align="center" className="p-2 bg-gray-50 rounded border">
-                  <Text className="text-sm font-mono">{project.name}</Text>
-                  <a
-                    href={`${instance?.endpoint?.replace('/hopsworks-api', '')}/p/${project.id}/settings/general`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-red-600 hover:text-red-800 underline"
-                  >
-                    Delete project
-                  </a>
-                </Flex>
-              ))}
-            </Box>
-            <Button
-              intent="secondary"
-              size="sm"
-              className="w-full mt-3"
-              onClick={async () => {
-                await refetchHopsworksInfo();
-                await refetchBilling();
-              }}
-              disabled={hopsworksLoading}
-              isLoading={hopsworksLoading}
+        <DialogContent
+          showCloseButton={false}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>Action Required</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <StatusBox
+              tone="warning"
+              icon={<AlertTriangle size={20} className="text-quartz-label-orange flex-shrink-0 mt-0.5" />}
             >
-              <RefreshCw size={14} />
-              I&apos;ve deleted a project - Refresh
-            </Button>
-          </Box>
+              <p className="text-sm font-medium mb-2">
+                Your account is now on the Free plan
+              </p>
+              <p className="text-sm">
+                Free plan includes <strong>1 project only</strong>. You currently have{' '}
+                <strong>{hopsworksInfo?.projects?.length || 0} projects</strong>.
+              </p>
+            </StatusBox>
 
-          <Box className="border-t pt-4">
-            <Text className="text-sm text-gray-600 mb-3">
-              <strong>Alternatively</strong>, add a payment method to upgrade to Pay-as-you-go (5 projects included):
-            </Text>
-            <Button
-              intent="primary"
-              size="md"
-              className="w-full"
-              onClick={handleUpgradeToPostpaid}
-              disabled={upgradingToPostpaid}
-              isLoading={upgradingToPostpaid}
-            >
-              <CreditCard size={16} />
-              Add Payment Method
-            </Button>
-          </Box>
-        </Flex>
-      </Modal>
+            {billing?.downgradeDeadline && (
+              <div className="p-3 bg-muted rounded border border-border">
+                <p className="text-sm text-foreground">
+                  <strong>Deadline:</strong>{' '}
+                  {new Date(billing.downgradeDeadline).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Delete {(hopsworksInfo?.projects?.length || 0) - 1} project(s) by this date or your account will be suspended.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm font-medium mb-3">Your projects:</p>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {hopsworksInfo?.projects?.map((project) => (
+                  <div key={project.id} className="flex justify-between items-center p-2 bg-muted rounded border border-border">
+                    <span className="text-sm font-mono">{project.name}</span>
+                    <a
+                      href={`${instance?.endpoint?.replace('/hopsworks-api', '')}/p/${project.id}/settings/general`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-destructive hover:underline"
+                    >
+                      Delete project
+                    </a>
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-3"
+                onClick={async () => {
+                  await refetchHopsworksInfo();
+                  await refetchBilling();
+                }}
+                disabled={hopsworksLoading}
+                loading={hopsworksLoading}
+              >
+                <RefreshCw size={14} />
+                I&apos;ve deleted a project - Refresh
+              </Button>
+            </div>
+
+            <div className="border-t pt-4">
+              <p className="text-sm text-muted-foreground mb-3">
+                <strong>Alternatively</strong>, add a payment method to upgrade to Pay-as-you-go (5 projects included):
+              </p>
+              <Button
+                className="w-full"
+                onClick={handleUpgradeToPostpaid}
+                disabled={upgradingToPostpaid}
+                loading={upgradingToPostpaid}
+              >
+                <CreditCard size={16} />
+                Add Payment Method
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

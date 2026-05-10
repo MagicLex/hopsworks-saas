@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Box, Flex, Text, Card, Badge } from 'tailwind-quartz';
+
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface Project {
   name: string;
@@ -15,85 +17,85 @@ interface UserProjectsViewerProps {
   accountOwnerId?: string;
 }
 
-export default function UserProjectsViewer({ 
-  userId, 
-  userEmail, 
-  isTeamMember,
-  accountOwnerId 
+export default function UserProjectsViewer({
+  userId,
+  userEmail,
 }: UserProjectsViewerProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProjects();
-  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchProjects = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/admin/project-roles?userId=${userId}`);
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch projects');
+    const fetchProjects = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(
+          `/api/admin/project-roles?userId=${userId}`,
+        );
+        if (!response.ok) {
+          const errBody = await response.json();
+          throw new Error(errBody.error || 'Failed to fetch projects');
+        }
+        const data = await response.json();
+        setProjects(data.projects || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load projects');
+      } finally {
+        setLoading(false);
       }
-      const data = await response.json();
-      setProjects(data.projects || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load projects');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
+    fetchProjects();
+  }, [userId]);
 
   if (loading) {
     return (
       <Card className="p-4">
-        <Text className="text-gray">Loading projects...</Text>
+        <span className="text-muted-foreground">Loading projects...</span>
       </Card>
     );
   }
 
   return (
     <Card className="p-4">
-      <Box className="mb-4">
-        <Text className="font-semibold">User&apos;s Hopsworks Projects</Text>
-        <Text className="text-xs text-gray">{userEmail}</Text>
-      </Box>
+      <div className="mb-4">
+        <p className="font-semibold">User&apos;s Hopsworks Projects</p>
+        <p className="text-xs text-muted-foreground">{userEmail}</p>
+      </div>
 
       {error && (
-        <Box className="mb-4 p-2 bg-dangerShade1 border border-dangerDefault rounded">
-          <Text className="text-sm text-dangerDefault">{error}</Text>
-        </Box>
+        <div className="mb-4 p-2 bg-destructive/10 border border-destructive rounded">
+          <span className="text-sm text-destructive">{error}</span>
+        </div>
       )}
 
       {projects.length === 0 ? (
-        <Text className="text-sm text-gray">No projects found for this user</Text>
+        <span className="text-sm text-muted-foreground">
+          No projects found for this user
+        </span>
       ) : (
-        <Box className="space-y-2">
-          <Text className="text-xs text-gray mb-2">Total: {projects.length} project{projects.length !== 1 ? 's' : ''}</Text>
-          {projects.map(project => (
-            <Box 
-              key={project.id} 
-              className="p-3 border border-grayShade2 rounded"
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground mb-2">
+            Total: {projects.length} project
+            {projects.length !== 1 ? 's' : ''}
+          </p>
+          {projects.map((project) => (
+            <div
+              key={project.id}
+              className="p-3 border border-border rounded"
             >
-              <Flex justify="between" align="center">
-                <Box>
-                  <Text className="font-medium">{project.name}</Text>
-                  <Text className="text-xs text-gray">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">{project.name}</p>
+                  <p className="text-xs text-muted-foreground">
                     Project ID: {project.id} | Namespace: {project.namespace}
-                  </Text>
-                </Box>
-                {project.role && (
-                  <Badge size="sm" variant="default">
-                    {project.role}
-                  </Badge>
-                )}
-              </Flex>
-            </Box>
+                  </p>
+                </div>
+                {project.role && <Badge>{project.role}</Badge>}
+              </div>
+            </div>
           ))}
-        </Box>
+        </div>
       )}
     </Card>
   );
