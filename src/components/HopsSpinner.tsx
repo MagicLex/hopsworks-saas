@@ -1,5 +1,4 @@
 import React from 'react';
-import { Box } from 'tailwind-quartz';
 
 interface HopsSpinnerProps {
   size?: 'sm' | 'md' | 'lg';
@@ -14,7 +13,7 @@ const sizeClasses = {
 
 export function HopsSpinner({ size = 'md', className = '' }: HopsSpinnerProps) {
   return (
-    <Box className={`relative ${sizeClasses[size]} ${className}`}>
+    <div className={`relative ${sizeClasses[size]} ${className}`}>
       <style>{`
         @keyframes hops-eyes {
           0%, 100% { transform: translateX(0); }
@@ -73,7 +72,7 @@ export function HopsSpinner({ size = 'md', className = '' }: HopsSpinnerProps) {
         <rect x="8" y="37" width="7" height="3" fill="#17a376"/>
         <rect x="17" y="37" width="7" height="3" fill="#17a376"/>
       </svg>
-    </Box>
+    </div>
   );
 }
 

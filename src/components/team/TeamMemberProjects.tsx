@@ -1,4 +1,3 @@
-import { Box, Flex, Text } from 'tailwind-quartz';
 import { CheckCircle, AlertCircle, FolderOpen } from 'lucide-react';
 
 interface ProjectRole {
@@ -17,53 +16,49 @@ interface TeamMemberProjectsProps {
 }
 
 export default function TeamMemberProjects({
-  memberId,
-  memberEmail,
-  memberName,
   hopsworksUsername,
-  clusterUrl,
-  projects
+  projects,
 }: TeamMemberProjectsProps) {
   const isActive = !!hopsworksUsername;
-  const syncedProjects = projects?.filter(p => p.synced_to_hopsworks) || [];
+  const syncedProjects = projects?.filter((p) => p.synced_to_hopsworks) || [];
 
   return (
-    <Box>
-      <Flex align="center" gap={8}>
+    <div>
+      <div className="flex items-center gap-2">
         {isActive ? (
           <>
-            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-green-100 text-green-700 border border-green-300">
+            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-quartz-primary-shade2 text-primary border border-primary">
               <CheckCircle size={12} className="mr-1" />
               Active in Hopsworks
             </span>
-            <Text className="text-xs text-gray-600">
+            <span className="text-xs text-muted-foreground">
               {hopsworksUsername}
-            </Text>
+            </span>
           </>
         ) : (
-          <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-700 border border-yellow-300">
+          <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-quartz-label-yellow-shade2 text-quartz-label-orange border border-quartz-label-orange">
             <AlertCircle size={12} className="mr-1" />
             Syncing to Hopsworks...
           </span>
         )}
-      </Flex>
+      </div>
 
       {syncedProjects.length > 0 && (
-        <Flex align="center" gap={6} className="mt-2">
-          <FolderOpen size={14} className="text-gray-400" />
-          <Flex gap={6} className="flex-wrap">
+        <div className="flex items-center gap-1.5 mt-2">
+          <FolderOpen size={14} className="text-muted-foreground" />
+          <div className="flex gap-1.5 flex-wrap">
             {syncedProjects.map((project) => (
               <span
                 key={project.project_name}
-                className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700"
+                className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-muted text-foreground"
                 title={`Role: ${project.role}`}
               >
                 {project.project_name}
               </span>
             ))}
-          </Flex>
-        </Flex>
+          </div>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }

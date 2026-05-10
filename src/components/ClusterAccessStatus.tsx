@@ -1,6 +1,10 @@
-import { Box, Card, Text, Button, StatusMessage, Flex } from 'tailwind-quartz';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
+
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface ClusterAccessStatusProps {
   hasCluster: boolean;
@@ -12,6 +16,36 @@ interface ClusterAccessStatusProps {
   isTeamMember?: boolean;
 }
 
+const variantStyles = {
+  success:
+    'border-quartz-label-green bg-quartz-label-green-shade2 text-quartz-label-green',
+  info: 'border-quartz-label-blue bg-quartz-label-blue-shade2 text-quartz-label-blue',
+  warning:
+    'border-quartz-label-orange bg-quartz-label-orange-shade2 text-quartz-label-orange',
+} as const;
+
+function StatusBox({
+  variant,
+  icon,
+  children,
+}: {
+  variant: keyof typeof variantStyles;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-lg border p-4 flex items-start gap-3',
+        variantStyles[variant],
+      )}
+    >
+      <div className="shrink-0 mt-0.5">{icon}</div>
+      <div className="flex-1 text-foreground">{children}</div>
+    </div>
+  );
+}
+
 export default function ClusterAccessStatus({
   hasCluster,
   hasPaymentMethod,
@@ -19,113 +53,93 @@ export default function ClusterAccessStatus({
   clusterName,
   loading = false,
   reloadProgress = 0,
-  isTeamMember = false
+  isTeamMember = false,
 }: ClusterAccessStatusProps) {
-  // Show skeleton loader while loading OR when billingMode is not yet loaded
   if (loading || billingMode === undefined) {
     return (
       <Card className="p-4">
-        <Flex align="center" gap={12}>
-          <Box className="w-5 h-5 bg-gray-200 rounded animate-pulse" />
-          <Box className="flex-1">
-            <Box className="h-5 bg-gray-200 rounded w-40 mb-2 animate-pulse" />
-            <Box className="h-4 bg-gray-200 rounded w-56 animate-pulse" />
-          </Box>
-        </Flex>
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-5" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+        </div>
       </Card>
     );
   }
 
   if (hasCluster) {
     return (
-      <StatusMessage variant="success" icon={<CheckCircle size={20} />}>
-        <Box>
-          <Text className="font-semibold text-green-800">Cluster Access Active</Text>
-          <Text className="text-sm text-green-700">
-            Connected to: {clusterName || 'Hopsworks Cluster'}
-          </Text>
-        </Box>
-      </StatusMessage>
+      <StatusBox variant="success" icon={<CheckCircle size={20} />}>
+        <div className="font-semibold">Cluster Access Active</div>
+        <div className="text-sm">
+          Connected to: {clusterName || 'Hopsworks Cluster'}
+        </div>
+      </StatusBox>
     );
   }
 
-  // For prepaid/free users, show different message
   if ((billingMode === 'prepaid' || billingMode === 'free') && !hasCluster) {
     return (
-      <StatusMessage variant="info" icon={<AlertTriangle size={20} />}>
-        <Box>
-          <Text className="font-semibold text-blue-800 mb-3">
-            Cluster Setup In Progress
-          </Text>
-          <Text className="text-sm text-blue-700 mb-4">
-            Your cluster is being provisioned. This typically takes a few minutes.
-            If you continue to see this message, please contact support.
-          </Text>
+      <StatusBox variant="info" icon={<AlertTriangle size={20} />}>
+        <div className="font-semibold mb-2">Cluster Setup In Progress</div>
+        <div className="text-sm mb-3">
+          Your cluster is being provisioned. This typically takes a few minutes.
+          If you continue to see this message, please contact support.
+        </div>
 
-          {/* Retro progress bar */}
-          {reloadProgress > 0 && (
-            <Box className="mt-3">
-              <Text className="text-xs text-blue-600 mb-2 font-mono">
-                Checking status... {Math.floor(reloadProgress)}%
-              </Text>
-              <Box className="w-full h-4 bg-blue-100 border-2 border-blue-300 rounded overflow-hidden">
-                <Box
-                  className="h-full bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-100 ease-linear"
-                  style={{
-                    width: `${reloadProgress}%`,
-                    backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.2) 10px, rgba(255,255,255,.2) 20px)'
-                  }}
-                />
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </StatusMessage>
+        {reloadProgress > 0 && (
+          <div className="mt-3">
+            <div className="text-xs font-mono mb-2">
+              Checking status... {Math.floor(reloadProgress)}%
+            </div>
+            <div className="w-full h-4 bg-quartz-label-blue-shade2 border-2 border-quartz-label-blue rounded overflow-hidden">
+              <div
+                className="h-full bg-quartz-label-blue transition-all duration-100 ease-linear"
+                style={{
+                  width: `${reloadProgress}%`,
+                  backgroundImage:
+                    'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.2) 10px, rgba(255,255,255,.2) 20px)',
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </StatusBox>
     );
   }
 
-  // Team members don't need to set up payment - show syncing message
   if (isTeamMember) {
     return (
-      <StatusMessage variant="info" icon={<AlertTriangle size={20} />}>
-        <Box>
-          <Text className="font-semibold text-blue-800 mb-3">
-            Setting Up Your Access
-          </Text>
-          <Text className="text-sm text-blue-700">
-            Your cluster access is being configured. This usually takes a few moments.
-          </Text>
-        </Box>
-      </StatusMessage>
+      <StatusBox variant="info" icon={<AlertTriangle size={20} />}>
+        <div className="font-semibold mb-2">Setting Up Your Access</div>
+        <div className="text-sm">
+          Your cluster access is being configured. This usually takes a few
+          moments.
+        </div>
+      </StatusBox>
     );
   }
 
   return (
-    <StatusMessage variant="warning" icon={<AlertTriangle size={20} />}>
-      <Box>
-        <Text className="font-semibold text-yellow-800 mb-3">
-          Cluster Access Pending
-        </Text>
-        {!hasPaymentMethod ? (
-          <>
-            <Text className="text-sm text-yellow-700 mb-4">
-              Set up a payment method to get access to Hopsworks clusters.
-            </Text>
-            <Link href="/billing">
-              <Button
-                intent="primary"
-                size="md"
-              >
-                Set Up Payment
-              </Button>
-            </Link>
-          </>
-        ) : (
-          <Text className="text-sm text-yellow-700">
-            Your cluster access is being provisioned. This usually takes a few minutes.
-          </Text>
-        )}
-      </Box>
-    </StatusMessage>
+    <StatusBox variant="warning" icon={<AlertTriangle size={20} />}>
+      <div className="font-semibold mb-2">Cluster Access Pending</div>
+      {!hasPaymentMethod ? (
+        <>
+          <div className="text-sm mb-4">
+            Set up a payment method to get access to Hopsworks clusters.
+          </div>
+          <Link href="/billing">
+            <Button>Set Up Payment</Button>
+          </Link>
+        </>
+      ) : (
+        <div className="text-sm">
+          Your cluster access is being provisioned. This usually takes a few
+          minutes.
+        </div>
+      )}
+    </StatusBox>
   );
 }
