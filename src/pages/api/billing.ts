@@ -442,7 +442,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           try {
             await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000'}/api/alerts/downgrade`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${process.env.INTERNAL_API_SECRET}`,
+              },
               body: JSON.stringify({
                 userId,
                 email: user.email,

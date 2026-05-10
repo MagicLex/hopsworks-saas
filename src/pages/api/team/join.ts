@@ -5,6 +5,7 @@ import { assignUserToCluster } from '@/lib/cluster-assignment';
 import { getPostHogClient } from '@/lib/posthog-server';
 import { handleApiError } from '@/lib/error-handler';
 import { sendUserRegistered, sendUserActivated } from '@/lib/marketing-webhooks';
+import { hashInviteToken } from '@/lib/invite-token';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,14 +35,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Atomically claim the invite - UPDATE with WHERE accepted_at IS NULL
-    // This prevents race conditions where two requests could both see the invite as valid
+    // This prevents race conditions where two requests could both see the invite as valid.
+    // Lookup by SHA256 hash; plaintext is never queried.
+    const tokenHash = hashInviteToken(token);
     const { data: invite, error: claimError } = await supabase
       .from('team_invites')
       .update({
         accepted_at: new Date().toISOString(),
         accepted_by_user_id: userId
       })
-      .eq('token', token)
+      .eq('token_hash', tokenHash)
       .is('accepted_at', null)
       .select('*')
       .single();

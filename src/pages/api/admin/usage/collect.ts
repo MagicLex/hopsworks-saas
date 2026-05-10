@@ -8,7 +8,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     // Call the OpenCost collection endpoint directly
-    const baseUrl = process.env.NEXTAUTH_URL || 'https://run.hopsworks.ai';
+    const baseUrl = process.env.AUTH0_BASE_URL;
     
     const response = await fetch(`${baseUrl}/api/usage/collect-opencost`, {
       method: 'POST',
