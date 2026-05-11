@@ -5,6 +5,7 @@ import { getUserProjects, getAllProjects } from '../../../lib/hopsworks-api';
 import { calculateCreditsUsed, calculateDollarAmount } from '../../../config/billing-rates';
 import { checkSpendingCap } from '../../../lib/spending-alerts';
 import { requireCronAuth } from '../../../lib/internal-auth';
+import { currentClusterEnvironment } from '../../../lib/environment';
 
 type ProjectBreakdownEntry = {
   name: string;
@@ -190,10 +191,12 @@ async function collectOpenCostMetrics() {
   console.log(`Starting OpenCost collection for: ${currentDate} hour ${currentHourUtc} (UTC)`);
 
   // Get ALL Hopsworks clusters with kubeconfig (status doesn't matter for billing)
-  // 'inactive' clusters may still have users generating costs
+  // 'inactive' clusters may still have users generating costs.
+  // Env filter prevents prod cron from exec'ing kubectl against a staging kubeconfig.
   const { data: clusters, error: clusterError } = await supabaseAdmin
     .from('hopsworks_clusters')
     .select('*')
+    .eq('environment', currentClusterEnvironment())
     .not('kubeconfig', 'is', null);
 
   if (clusterError || !clusters || clusters.length === 0) {

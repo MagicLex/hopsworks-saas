@@ -127,6 +127,7 @@ export interface Database {
           max_users: number;
           current_users: number;
           status: 'active' | 'maintenance' | 'full' | 'inactive';
+          environment: 'production' | 'staging';
           created_at: string;
           updated_at: string;
           metadata: Record<string, any>;
