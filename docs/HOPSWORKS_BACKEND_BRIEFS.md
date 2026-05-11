@@ -41,10 +41,11 @@ The actual bug: the recompute query (`Project.findByOwner`) had no status filter
 ### Backend fix (Option A, shipped in `hopsworks-ee`)
 
 1. New value `UNDER_REMOVAL` in `CreationStatus` enum (ORDINAL=3, append-safe, no schema migration).
-2. New named query `Project.findActiveByOwner` excludes `FAILED` and `UNDER_REMOVAL` from the recompute.
+2. New named query `Project.findActiveByOwner` excludes `FAILED` and `UNDER_REMOVAL` from the recompute. `ONGOING` still counts (a creation in flight should hold its slot); the safety net in step 5 below stops it from counting forever.
 3. `UsersController.updateNumActiveProjects` now uses the active query: stale zombies stop counting toward the quota.
 4. `ProjectController.cleanup` and `forceCleanup` flip the project to `UNDER_REMOVAL` at the top of the method, before any cleanup work runs. The user's quota slot is freed up-front. If cleanup fails halfway, the row stays as `UNDER_REMOVAL`, doesn't count, doesn't block the user.
-5. New admin endpoint `POST /admin/projects/{projectId}/force-purge`: hard-deletes a stuck zombie row (only allowed when `creationStatus IN (FAILED, UNDER_REMOVAL)`, returns `409 PROJECT_NOT_PURGEABLE` otherwise) and recomputes the owner's `numActiveProjects`. Use after manual confirmation that external resources (HDFS, K8s, certs) are gone.
+5. `ProjectController.createProjectInternal` finally block flips any row still in `ONGOING` to `UNDER_REMOVAL` via `markProjectUnderRemoval`. Several early throws (`verifyProject`'s `PROJECT_FOLDER_EXISTS` / `PROJECT_USER_EXISTS` / `PROJECT_GROUP_EXISTS`) skipped `cleanup()` and left the row stuck `ONGOING` forever, permanently consuming a quota slot. The finally guard closes that hole for every in-process failure path.
+6. New admin endpoint `POST /admin/projects/{projectId}/force-purge`: hard-deletes a stuck zombie row (allowed for `FAILED`, `UNDER_REMOVAL`, and `ONGOING`; returns `409 PROJECT_NOT_PURGEABLE` for `DONE`) and recomputes the owner's `numActiveProjects`. `ONGOING` is accepted as a last-resort path for JVM crashes between persist and the finally net. Use after manual confirmation that external resources (HDFS, K8s, certs) are gone.
 
 ### What `hopsworks-managed` can simplify once deployed
 
@@ -70,7 +71,7 @@ Roughly 200 lines removed plus one admin endpoint.
 - `hopsworks-persistence/.../project/Project.java`: named query `Project.findActiveByOwner`
 - `hopsworks-common/.../dao/project/ProjectFacade.java`: `findActiveByUser`
 - `hopsworks-common/.../user/UsersController.java`: `updateNumActiveProjects` (uses active query)
-- `hopsworks-common/.../project/ProjectController.java`: `markProjectUnderRemoval`, `forcePurge`, calls in `cleanup` and `forceCleanup`
+- `hopsworks-common/.../project/ProjectController.java`: `markProjectUnderRemoval`, `forcePurge` (accepts `ONGOING`), `createProjectInternal` finally guard, calls in `cleanup` and `forceCleanup`
 - `hopsworks-api/.../admin/projects/ProjectsAdminResource.java`: `POST /admin/projects/{projectId}/force-purge`
 - `hopsworks-rest-utils/.../RESTCodes.java`: `ProjectErrorCode.PROJECT_NOT_PURGEABLE`
 
