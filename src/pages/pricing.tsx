@@ -1,23 +1,21 @@
 import React, { useState } from 'react';
 import Head from 'next/head';
-import Layout from '@/components/Layout';
-import { Box, Title, Text, Flex, Card, Button, IconLabel } from 'tailwind-quartz';
-import { usePricing } from '@/contexts/PricingContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { Cpu, HardDrive, Database, Server, Activity } from 'lucide-react';
 
+import Layout from '@/components/Layout';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { usePricing } from '@/contexts/PricingContext';
+import { useAuth } from '@/contexts/AuthContext';
+
 export default function Pricing() {
-  const { pricing, loading } = usePricing();
+  const { pricing } = usePricing();
   const { signIn } = useAuth();
-  
-  // Calculator state - defaults based on typical ML project
-  // ~8 hours/day * 22 workdays = 176 CPU hours/month for development
+
   const [cpuHours, setCpuHours] = useState(176);
-  // 16GB RAM typical for data processing * 176 hours = 2816 GB-hours
   const [ramGbHours, setRamGbHours] = useState(2816);
-  // Feature store online serving data
   const [storageOnlineGb, setStorageOnlineGb] = useState(100);
-  // Historical features, training data, model artifacts
   const [storageOfflineGb, setStorageOfflineGb] = useState(1000);
 
   const calculateMonthlyCost = () => {
@@ -25,7 +23,6 @@ export default function Pricing() {
     const ram = ramGbHours * pricing.ram_gb_hour;
     const onlineStorage = storageOnlineGb * pricing.storage_online_gb;
     const offlineStorage = storageOfflineGb * pricing.storage_offline_gb;
-    
     return cpu + ram + onlineStorage + offlineStorage;
   };
 
@@ -36,90 +33,102 @@ export default function Pricing() {
     <>
       <Head>
         <title>Pricing - Hopsworks Managed | Pay-As-You-Go ML Platform</title>
-        <meta name="description" content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees. Start free and scale as you grow." />
+        <meta
+          name="description"
+          content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees. Start free and scale as you grow."
+        />
         <link rel="canonical" href="https://run.hopsworks.ai/pricing" />
 
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://run.hopsworks.ai/pricing" />
-        <meta property="og:title" content="Pricing - Hopsworks Managed | Pay-As-You-Go ML Platform" />
-        <meta property="og:description" content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees." />
-        <meta property="og:image" content="https://cdn.prod.website-files.com/5f6353590bb01cacbcecfbac/60917a423cdde50b5a00feeb_og-hopsworks.png" />
+        <meta
+          property="og:title"
+          content="Pricing - Hopsworks Managed | Pay-As-You-Go ML Platform"
+        />
+        <meta
+          property="og:description"
+          content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees."
+        />
+        <meta
+          property="og:image"
+          content="https://cdn.prod.website-files.com/5f6353590bb01cacbcecfbac/60917a423cdde50b5a00feeb_og-hopsworks.png"
+        />
 
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:url" content="https://run.hopsworks.ai/pricing" />
-        <meta name="twitter:title" content="Pricing - Hopsworks Managed | Pay-As-You-Go ML Platform" />
-        <meta name="twitter:description" content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees." />
-        <meta name="twitter:image" content="https://cdn.prod.website-files.com/5f6353590bb01cacbcecfbac/60917a423cdde50b5a00feeb_og-hopsworks.png" />
+        <meta
+          name="twitter:title"
+          content="Pricing - Hopsworks Managed | Pay-As-You-Go ML Platform"
+        />
+        <meta
+          name="twitter:description"
+          content="Simple, transparent pricing for Hopsworks. Pay only for what you use. No upfront costs, no hidden fees."
+        />
+        <meta
+          name="twitter:image"
+          content="https://cdn.prod.website-files.com/5f6353590bb01cacbcecfbac/60917a423cdde50b5a00feeb_og-hopsworks.png"
+        />
       </Head>
       <Layout className="py-16 px-5">
-        <Box className="max-w-6xl mx-auto">
-          <Box className="mb-12">
-            <Title className="text-2xl mb-2">
-              Pricing
-            </Title>
-            <Text className="text-sm text-gray-600">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-12">
+            <h1 className="text-2xl font-semibold mb-2">Pricing</h1>
+            <p className="text-sm text-muted-foreground">
               Pay only for what you use. No hidden fees.
-            </Text>
-          </Box>
+            </p>
+          </div>
 
-          {/* Current Rates */}
-          <Flex direction="column" gap={20} className="mb-12">
+          <div className="flex flex-col gap-5 mb-12">
             <Card className="p-6">
-              <Title as="h3" className="text-base mb-4">Base Rates</Title>
-              <Flex direction="column" gap={12}>
-                <Flex justify="between" align="center" className="pb-3 border-b border-gray-100">
-                  <IconLabel icon={<Activity size={16} className="text-gray-400" />}>
-                    <Text className="text-sm">Compute Credits</Text>
-                  </IconLabel>
-                  <Text className="text-sm font-mono font-semibold">${pricing.compute_credits.toFixed(2)}/credit</Text>
-                </Flex>
-                <Flex justify="between" align="center" className="pb-3 border-b border-gray-100">
-                  <IconLabel icon={<Database size={16} className="text-gray-400" />}>
-                    <Text className="text-sm">Online Storage</Text>
-                  </IconLabel>
-                  <Text className="text-sm font-mono font-semibold">${pricing.storage_online_gb.toFixed(2)}/GB/month</Text>
-                </Flex>
-                <Flex justify="between" align="center" className="pb-3 border-b border-gray-100">
-                  <IconLabel icon={<HardDrive size={16} className="text-gray-400" />}>
-                    <Text className="text-sm">Offline Storage</Text>
-                  </IconLabel>
-                  <Text className="text-sm font-mono font-semibold">${pricing.storage_offline_gb.toFixed(2)}/GB/month</Text>
-                </Flex>
-              </Flex>
+              <h3 className="text-base font-semibold mb-4">Base Rates</h3>
+              <div className="flex flex-col gap-3">
+                <RateRow
+                  icon={<Activity size={16} className="text-muted-foreground" />}
+                  label="Compute Credits"
+                  price={`$${pricing.compute_credits.toFixed(2)}/credit`}
+                />
+                <RateRow
+                  icon={<Database size={16} className="text-muted-foreground" />}
+                  label="Online Storage"
+                  price={`$${pricing.storage_online_gb.toFixed(2)}/GB/month`}
+                />
+                <RateRow
+                  icon={<HardDrive size={16} className="text-muted-foreground" />}
+                  label="Offline Storage"
+                  price={`$${pricing.storage_offline_gb.toFixed(2)}/GB/month`}
+                />
+              </div>
             </Card>
 
             <Card className="p-6">
-              <Title as="h3" className="text-base mb-4">Compute Resources</Title>
-              <Flex direction="column" gap={12}>
-                <Flex justify="between" align="center" className="pb-3 border-b border-gray-100">
-                  <IconLabel icon={<Cpu size={16} className="text-gray-400" />}>
-                    <Text className="text-sm">CPU Hour</Text>
-                  </IconLabel>
-                  <Text className="text-sm font-mono font-semibold">${pricing.cpu_hour.toFixed(4)}/hour</Text>
-                </Flex>
-                <Flex justify="between" align="center" className="pb-3 border-b border-gray-100">
-                  <IconLabel icon={<Server size={16} className="text-gray-400" />}>
-                    <Text className="text-sm">RAM GB Hour</Text>
-                  </IconLabel>
-                  <Text className="text-sm font-mono font-semibold">${pricing.ram_gb_hour.toFixed(4)}/GB-hour</Text>
-                </Flex>
-              </Flex>
+              <h3 className="text-base font-semibold mb-4">Compute Resources</h3>
+              <div className="flex flex-col gap-3">
+                <RateRow
+                  icon={<Cpu size={16} className="text-muted-foreground" />}
+                  label="CPU Hour"
+                  price={`$${pricing.cpu_hour.toFixed(4)}/hour`}
+                />
+                <RateRow
+                  icon={<Server size={16} className="text-muted-foreground" />}
+                  label="RAM GB Hour"
+                  price={`$${pricing.ram_gb_hour.toFixed(4)}/GB-hour`}
+                />
+              </div>
             </Card>
-          </Flex>
+          </div>
 
-          {/* Cost Calculator */}
           <Card className="p-6">
-            <Title as="h3" className="text-base mb-6">Cost Calculator</Title>
-            
-            {/* Presets */}
-            <Box className="mb-6">
-              <Text className="text-sm text-gray-600 mb-3">Quick presets:</Text>
-              <Flex gap={8} className="flex-wrap">
+            <h3 className="text-base font-semibold mb-6">Cost Calculator</h3>
+
+            <div className="mb-6">
+              <p className="text-sm text-muted-foreground mb-3">
+                Quick presets:
+              </p>
+              <div className="flex gap-2 flex-wrap">
                 <Button
-                  intent="secondary"
+                  variant="secondary"
                   size="sm"
                   onClick={() => {
-                    // Small team: 1-2 people
                     setCpuHours(176);
                     setRamGbHours(2816);
                     setStorageOnlineGb(100);
@@ -130,12 +139,11 @@ export default function Pricing() {
                   Small Team (1-2 people)
                 </Button>
                 <Button
-                  intent="secondary"
+                  variant="secondary"
                   size="sm"
                   onClick={() => {
-                    // Medium team: 5-10 people
-                    setCpuHours(880); // 5 people × 176
-                    setRamGbHours(14080); // 5 people × 2816
+                    setCpuHours(880);
+                    setRamGbHours(14080);
                     setStorageOnlineGb(500);
                     setStorageOfflineGb(5000);
                   }}
@@ -143,106 +151,119 @@ export default function Pricing() {
                 >
                   Medium Team (5-10 people)
                 </Button>
-              </Flex>
-            </Box>
-            
-            <Box className="grid md:grid-cols-2 gap-6 mb-8">
-              <Box>
-                <label className="block text-sm text-gray-600 mb-2">
-                  CPU Hours/month
-                </label>
-                <input
-                  type="number"
-                  value={cpuHours}
-                  onChange={(e) => setCpuHours(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm font-mono focus:outline-none focus:border-blue-400"
-                />
-                <Text className="text-xs text-gray-500 mt-1 font-mono">
-                  ${(cpuHours * pricing.cpu_hour).toFixed(2)}/month
-                </Text>
-              </Box>
-              
-              <Box>
-                <label className="block text-sm text-gray-600 mb-2">
-                  RAM GB-Hours/month
-                </label>
-                <input
-                  type="number"
-                  value={ramGbHours}
-                  onChange={(e) => setRamGbHours(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm font-mono focus:outline-none focus:border-blue-400"
-                />
-                <Text className="text-xs text-gray-500 mt-1 font-mono">
-                  ${(ramGbHours * pricing.ram_gb_hour).toFixed(2)}/month
-                </Text>
-              </Box>
-              
-              <Box>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Online Storage (GB)
-                </label>
-                <input
-                  type="number"
-                  value={storageOnlineGb}
-                  onChange={(e) => setStorageOnlineGb(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm font-mono focus:outline-none focus:border-blue-400"
-                />
-                <Text className="text-xs text-gray-500 mt-1 font-mono">
-                  ${(storageOnlineGb * pricing.storage_online_gb).toFixed(2)}/month
-                </Text>
-              </Box>
-              
-              <Box>
-                <label className="block text-sm text-gray-600 mb-2">
-                  Offline Storage (GB)
-                </label>
-                <input
-                  type="number"
-                  value={storageOfflineGb}
-                  onChange={(e) => setStorageOfflineGb(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm font-mono focus:outline-none focus:border-blue-400"
-                />
-                <Text className="text-xs text-gray-500 mt-1 font-mono">
-                  ${(storageOfflineGb * pricing.storage_offline_gb).toFixed(2)}/month
-                </Text>
-              </Box>
-            </Box>
-            
-            {/* Total Cost Display */}
-            <Box className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-              <Flex justify="between" align="center" className="mb-4">
-                <Text className="text-sm text-gray-600">Estimated Monthly Cost</Text>
-                <Text className="text-2xl font-mono font-bold">
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
+              <CalcInput
+                label="CPU Hours/month"
+                value={cpuHours}
+                onChange={setCpuHours}
+                cost={cpuHours * pricing.cpu_hour}
+              />
+              <CalcInput
+                label="RAM GB-Hours/month"
+                value={ramGbHours}
+                onChange={setRamGbHours}
+                cost={ramGbHours * pricing.ram_gb_hour}
+              />
+              <CalcInput
+                label="Online Storage (GB)"
+                value={storageOnlineGb}
+                onChange={setStorageOnlineGb}
+                cost={storageOnlineGb * pricing.storage_online_gb}
+              />
+              <CalcInput
+                label="Offline Storage (GB)"
+                value={storageOfflineGb}
+                onChange={setStorageOfflineGb}
+                cost={storageOfflineGb * pricing.storage_offline_gb}
+              />
+            </div>
+
+            <div className="bg-muted p-6 rounded-lg border border-border">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-sm text-muted-foreground">
+                  Estimated Monthly Cost
+                </span>
+                <span className="text-2xl font-mono font-bold">
                   ${monthlyCost.toFixed(2)}
-                </Text>
-              </Flex>
-              
-              <Flex justify="between" align="center" className="pt-4 border-t border-gray-100">
-                <Text className="text-xs text-gray-500">Compute Credits Used</Text>
-                <Text className="text-sm font-mono font-semibold">{computeCreditsUsed.toFixed(2)} credits</Text>
-              </Flex>
-            </Box>
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pt-4 border-t border-border">
+                <span className="text-xs text-muted-foreground">
+                  Compute Credits Used
+                </span>
+                <span className="text-sm font-mono font-semibold">
+                  {computeCreditsUsed.toFixed(2)} credits
+                </span>
+              </div>
+            </div>
           </Card>
 
-          {/* CTA */}
-          <Flex justify="center" gap={16} className="mt-12">
-            <Button 
-              intent="primary"
-              size="md"
-              onClick={() => signIn(undefined, 'signup')}
-            >
+          <div className="flex justify-center gap-4 mt-12">
+            <Button onClick={() => signIn(undefined, 'signup')}>
               Get Started
             </Button>
-            <Button 
-              intent="secondary"
-              size="md"
-              onClick={() => window.open('https://www.hopsworks.ai/contact/main', '_blank')}
+            <Button
+              variant="secondary"
+              onClick={() =>
+                window.open('https://www.hopsworks.ai/contact/main', '_blank')
+              }
             >
               Contact Sales
             </Button>
-          </Flex>
-        </Box>
+          </div>
+        </div>
       </Layout>
     </>
+  );
+}
+
+function RateRow({
+  icon,
+  label,
+  price,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  price: string;
+}) {
+  return (
+    <div className="flex justify-between items-center pb-3 border-b border-border">
+      <span className="inline-flex items-center gap-2">
+        {icon}
+        <span className="text-sm">{label}</span>
+      </span>
+      <span className="text-sm font-mono font-semibold">{price}</span>
+    </div>
+  );
+}
+
+function CalcInput({
+  label,
+  value,
+  onChange,
+  cost,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  cost: number;
+}) {
+  return (
+    <div>
+      <Input
+        label={label}
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="font-mono"
+      />
+      <p className="text-xs text-muted-foreground mt-1 font-mono">
+        ${cost.toFixed(2)}/month
+      </p>
+    </div>
   );
 }

@@ -1,20 +1,35 @@
 import React from 'react';
-import { Toggle, Flex, Labeling } from 'tailwind-quartz';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface BillingToggleProps {
   isYearly: boolean;
   onToggle: () => void;
 }
 
-export const BillingToggle: React.FC<BillingToggleProps> = ({ isYearly, onToggle }) => {
+export const BillingToggle: React.FC<BillingToggleProps> = ({
+  isYearly,
+  onToggle,
+}) => {
   return (
-    <Flex align="center" gap={12} className="mb-8">
-      <Labeling gray>Monthly billing</Labeling>
-      <Toggle
+    <div className="flex items-center gap-3 mb-8">
+      <Label
+        htmlFor="billing-toggle"
+        className="text-muted-foreground cursor-pointer"
+      >
+        Monthly billing
+      </Label>
+      <Switch
+        id="billing-toggle"
         checked={isYearly}
-        onChange={onToggle}
+        onCheckedChange={onToggle}
       />
-      <Labeling gray>Annual billing (save 20%)</Labeling>
-    </Flex>
+      <Label
+        htmlFor="billing-toggle"
+        className="text-muted-foreground cursor-pointer"
+      >
+        Annual billing (save 20%)
+      </Label>
+    </div>
   );
 };

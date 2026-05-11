@@ -1,6 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
+import { requireCronAuth } from '../../../lib/internal-auth';
+import { currentClusterEnvironment } from '../../../lib/environment';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-06-30.basil'
@@ -91,11 +93,7 @@ ${issueLines}`;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify cron secret
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireCronAuth(req, res)) return;
 
   const issues: IntegrityIssue[] = [];
 
@@ -203,10 +201,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  // CHECK 5: Cluster user count drift
+  // CHECK 5: Cluster user count drift (scoped to current environment)
   const { data: clusters } = await supabaseAdmin
     .from('hopsworks_clusters')
-    .select('id, name, current_users');
+    .select('id, name, current_users')
+    .eq('environment', currentClusterEnvironment());
 
   for (const cluster of clusters || []) {
     const { count } = await supabaseAdmin
@@ -387,11 +386,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .is('deleted_at', null)
     .gte('created_at', sevenDaysAgo);
 
-  // Active clusters
+  // Active clusters (current environment only)
   const { count: clustersActive } = await supabaseAdmin
     .from('hopsworks_clusters')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'active');
+    .eq('status', 'active')
+    .eq('environment', currentClusterEnvironment());
 
   // Total usage this month — use DB-side sum to avoid Supabase's 1000 row default limit
   const { data: usageSum } = await supabaseAdmin

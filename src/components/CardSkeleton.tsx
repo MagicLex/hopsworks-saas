@@ -1,4 +1,6 @@
-import { Box, Card, Flex } from 'tailwind-quartz';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface CardSkeletonProps {
   rows?: number;
@@ -6,27 +8,27 @@ interface CardSkeletonProps {
   className?: string;
 }
 
-export default function CardSkeleton({ 
-  rows = 3, 
+export default function CardSkeleton({
+  rows = 3,
   showIcon = true,
-  className = ''
+  className = '',
 }: CardSkeletonProps) {
   return (
-    <Card className={`p-6 ${className}`}>
-      <Flex direction="column" gap={12}>
+    <Card className={cn('p-6', className)}>
+      <div className="flex flex-col gap-3">
         {showIcon && (
-          <Flex align="center" gap={12}>
-            <Box className="w-5 h-5 bg-gray-200 rounded animate-pulse" />
-            <Box className="h-5 bg-gray-200 rounded w-32 animate-pulse" />
-          </Flex>
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-5" />
+            <Skeleton className="h-5 w-32" />
+          </div>
         )}
         {Array.from({ length: rows }).map((_, i) => (
-          <Box key={i} className="space-y-2">
-            <Box className="h-4 bg-gray-200 rounded w-24 animate-pulse" />
-            <Box className="h-6 bg-gray-200 rounded w-32 animate-pulse" />
-          </Box>
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-6 w-32" />
+          </div>
         ))}
-      </Flex>
+      </div>
     </Card>
   );
 }

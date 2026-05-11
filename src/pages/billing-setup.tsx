@@ -2,15 +2,25 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import { CreditCard, AlertTriangle, ArrowRight, Check } from 'lucide-react';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { useBilling } from '@/contexts/BillingContext';
-import { Box, Flex, Title, Text, Button, Card } from 'tailwind-quartz';
-import { CreditCard, AlertTriangle, ArrowRight, Check } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 export default function BillingSetup() {
   const { user, loading: authLoading, synced } = useAuth();
-  const { billing, loading: billingLoading, error: billingError, refetch: refetchBilling } = useBilling();
+  const {
+    billing,
+    loading: billingLoading,
+    error: billingError,
+    refetch: refetchBilling,
+  } = useBilling();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -18,7 +28,6 @@ export default function BillingSetup() {
   const [savingConsent, setSavingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Wait for everything to load then check if we should redirect
   useEffect(() => {
     if (authLoading || !synced || billingLoading) return;
 
@@ -27,49 +36,55 @@ export default function BillingSetup() {
       return;
     }
 
-    // Team members go to dashboard
     if (billing?.isTeamMember) {
       router.push('/dashboard');
       return;
     }
 
-    // Prepaid and free users with terms accepted go to dashboard
-    if ((billing?.billingMode === 'prepaid' || billing?.billingMode === 'free') && !billing?.isSuspended && billing?.termsAcceptedAt) {
+    if (
+      (billing?.billingMode === 'prepaid' || billing?.billingMode === 'free') &&
+      !billing?.isSuspended &&
+      billing?.termsAcceptedAt
+    ) {
       router.push('/dashboard');
       return;
     }
 
-    // Postpaid users with payment method AND terms accepted go to dashboard
-    if (billing?.hasPaymentMethod && !billing?.isSuspended && billing?.termsAcceptedAt) {
+    if (
+      billing?.hasPaymentMethod &&
+      !billing?.isSuspended &&
+      billing?.termsAcceptedAt
+    ) {
       router.push('/dashboard');
       return;
     }
   }, [authLoading, synced, billingLoading, user, billing, router]);
 
-  // Derived state - IMPORTANT: require billing to be loaded (not null) before showing interactive UI
-  // If billing API fails, we should show loading/error state, not a broken interactive form
-  const isReady = synced && !billingLoading && user && billing && !billing.isTeamMember;
+  const isReady =
+    synced && !billingLoading && user && billing && !billing.isTeamMember;
   const needsTermsAcceptance = !billing?.termsAcceptedAt;
-  // Only show simplified "just accept terms" view for prepaid or users with payment method
-  // Free users should see the full view with both "Add Payment" and "Start for Free" options
-  const hasPaymentButNeedsTerms = (billing?.hasPaymentMethod || billing?.billingMode === 'prepaid') && needsTermsAcceptance && !billing?.isSuspended;
+  const hasPaymentButNeedsTerms =
+    (billing?.hasPaymentMethod || billing?.billingMode === 'prepaid') &&
+    needsTermsAcceptance &&
+    !billing?.isSuspended;
 
   const handleSetupPayment = async () => {
     setLoading(true);
 
     try {
-      // Save consent BEFORE redirecting to Stripe (user won't come back to this page)
       if (needsTermsAcceptance && termsAccepted) {
         const consentResponse = await fetch('/api/user/accept-terms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ marketingConsent })
+          body: JSON.stringify({ marketingConsent }),
         });
 
         if (!consentResponse.ok) {
           const errorData = await consentResponse.json().catch(() => ({}));
           console.error('Failed to save consent:', errorData);
-          setError(errorData.error || 'Failed to save preferences. Please try again.');
+          setError(
+            errorData.error || 'Failed to save preferences. Please try again.',
+          );
           setLoading(false);
           return;
         }
@@ -77,7 +92,7 @@ export default function BillingSetup() {
 
       const response = await fetch('/api/billing/setup-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
       const data = await response.json();
@@ -86,15 +101,13 @@ export default function BillingSetup() {
         throw new Error(data.error || 'Failed to set up payment');
       }
 
-      // Redirect to Stripe Checkout
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else if (data.portalUrl) {
-        // User already has payment method, go to portal
         window.location.href = data.portalUrl;
       }
-    } catch (error) {
-      console.error('Error setting up payment:', error);
+    } catch (err) {
+      console.error('Error setting up payment:', err);
       setError('Failed to set up payment. Please try again.');
       setLoading(false);
     }
@@ -103,20 +116,24 @@ export default function BillingSetup() {
   const handleStartFree = async () => {
     setSavingConsent(true);
 
-    // If user hasn't accepted terms yet, save consent first
     if (needsTermsAcceptance) {
-      if (!termsAccepted) { setSavingConsent(false); return; } // Should not happen due to disabled button
+      if (!termsAccepted) {
+        setSavingConsent(false);
+        return;
+      }
       try {
         const response = await fetch('/api/user/accept-terms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ marketingConsent })
+          body: JSON.stringify({ marketingConsent }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           console.error('Failed to save consent:', errorData);
-          setError(errorData.error || 'Failed to save preferences. Please try again.');
+          setError(
+            errorData.error || 'Failed to save preferences. Please try again.',
+          );
           setSavingConsent(false);
           return;
         }
@@ -128,37 +145,33 @@ export default function BillingSetup() {
       }
     }
 
-    // Switch to free tier and assign cluster
     try {
       const response = await fetch('/api/billing/start-free', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        const data = await response.json().catch(() => ({ error: 'Server error' }));
+        const data = await response
+          .json()
+          .catch(() => ({ error: 'Server error' }));
         console.error('Failed to start free:', data.error);
-        // Block on 400 errors (business logic) - these indicate the action cannot be completed
-        // 400 = client error (e.g., prepaid user trying to switch, already free, etc.)
         if (response.status === 400) {
-          setError(data.error || 'Cannot switch to free tier. Please contact support.');
+          setError(
+            data.error || 'Cannot switch to free tier. Please contact support.',
+          );
           setSavingConsent(false);
           return;
         }
-        // 500+ errors: server issue, still try to redirect (user state might be ok)
-        // If redirect fails, dashboard will handle it
       }
     } catch (err) {
       console.error('Error calling start-free:', err);
-      // Network errors shouldn't block if terms were accepted - user can be redirected
     }
 
-    // Refetch billing to update context before redirect
     try {
       await refetchBilling();
     } catch (err) {
       console.error('Failed to refetch billing, continuing to dashboard:', err);
-      // Don't block - dashboard will sync billing context on load
     }
     setSavingConsent(false);
 
@@ -166,8 +179,64 @@ export default function BillingSetup() {
     router.push('/dashboard');
   };
 
+  const consentBlock = (
+    <div className="space-y-3 mb-6 p-4 bg-muted rounded-lg border border-border">
+      <p className="text-sm font-semibold mb-3">Please accept to continue:</p>
+
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="terms"
+          checked={termsAccepted}
+          onCheckedChange={(c) => setTermsAccepted(c === true)}
+          className="mt-0.5"
+        />
+        <Label htmlFor="terms" className="text-sm font-normal cursor-pointer">
+          I agree to the{' '}
+          <Link
+            href="/terms"
+            target="_blank"
+            className="text-primary hover:underline"
+          >
+            Terms of Service
+          </Link>
+          ,{' '}
+          <Link
+            href="/aup"
+            target="_blank"
+            className="text-primary hover:underline"
+          >
+            Acceptable Use Policy
+          </Link>
+          , and{' '}
+          <Link
+            href="/privacy"
+            target="_blank"
+            className="text-primary hover:underline"
+          >
+            Privacy Policy
+          </Link>
+        </Label>
+      </div>
+
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="marketing"
+          checked={marketingConsent}
+          onCheckedChange={(c) => setMarketingConsent(c === true)}
+          className="mt-0.5"
+        />
+        <Label
+          htmlFor="marketing"
+          className="text-sm font-normal cursor-pointer text-muted-foreground"
+        >
+          I would like to receive product updates and marketing communications
+          (optional)
+        </Label>
+      </div>
+    </div>
+  );
+
   if (!isReady) {
-    // Show error state if billing failed to load (not just loading)
     const showError = !billingLoading && billingError;
 
     return (
@@ -175,25 +244,38 @@ export default function BillingSetup() {
         <Head>
           <title>Set Up Billing - Hopsworks</title>
         </Head>
-        <Box className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-muted">
           <Navbar />
-          <Box className="container mx-auto px-4 py-12 max-w-2xl">
+          <div className="container mx-auto px-4 py-12 max-w-2xl">
             <Card className="p-8">
               {showError ? (
-                <Box className="text-center">
-                  <AlertTriangle size={32} className="text-red-500 mx-auto mb-4" />
-                  <Text className="font-semibold text-red-800 mb-2">Failed to load billing information</Text>
-                  <Text className="text-sm text-gray-600 mb-4">{billingError || 'Please try again or contact support.'}</Text>
-                  <Button onClick={() => refetchBilling()} intent="secondary" disabled={billingLoading}>
+                <div className="text-center">
+                  <AlertTriangle
+                    size={32}
+                    className="text-destructive mx-auto mb-4"
+                  />
+                  <p className="font-semibold text-destructive mb-2">
+                    Failed to load billing information
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {billingError ||
+                      'Please try again or contact support.'}
+                  </p>
+                  <Button
+                    onClick={() => refetchBilling()}
+                    variant="secondary"
+                    disabled={billingLoading}
+                    loading={billingLoading}
+                  >
                     {billingLoading ? 'Retrying...' : 'Try Again'}
                   </Button>
-                </Box>
+                </div>
               ) : (
-                <Text>Loading...</Text>
+                <p>Loading...</p>
               )}
             </Card>
-          </Box>
-        </Box>
+          </div>
+        </div>
       </>
     );
   }
@@ -203,103 +285,63 @@ export default function BillingSetup() {
       <Head>
         <title>Set Up Billing - Hopsworks</title>
       </Head>
-      <Box className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-muted">
         <Navbar />
-        <Box className="container mx-auto px-4 py-12 max-w-2xl">
+        <div className="container mx-auto px-4 py-12 max-w-2xl">
           {billing?.isSuspended && (
-            <Card className="p-4 mb-4 border-red-500 bg-red-50">
-              <Flex align="center" gap={12}>
-                <AlertTriangle size={20} className="text-red-600" />
-                <Box>
-                  <Text className="font-semibold text-red-800">Account Suspended</Text>
-                  <Text className="text-sm text-red-700">Your payment method was removed. Add a new payment method below to restore access.</Text>
-                </Box>
-              </Flex>
+            <Card className={cn('p-4 mb-4 border-destructive bg-destructive/10')}>
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={20} className="text-destructive" />
+                <div>
+                  <p className="font-semibold text-destructive">
+                    Account Suspended
+                  </p>
+                  <p className="text-sm text-destructive/90">
+                    Your payment method was removed. Add a new payment method
+                    below to restore access.
+                  </p>
+                </div>
+              </div>
             </Card>
           )}
 
           {error && (
-            <Card className="p-4 mb-4 border-red-500 bg-red-50">
-              <Flex align="center" gap={12}>
-                <AlertTriangle size={20} className="text-red-600" />
-                <Box>
-                  <Text className="font-semibold text-red-800">Error</Text>
-                  <Text className="text-sm text-red-700">{error}</Text>
-                </Box>
-              </Flex>
+            <Card className="p-4 mb-4 border-destructive bg-destructive/10">
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={20} className="text-destructive" />
+                <div>
+                  <p className="font-semibold text-destructive">Error</p>
+                  <p className="text-sm text-destructive/90">{error}</p>
+                </div>
+              </div>
             </Card>
           )}
 
           <Card className="p-8">
             {hasPaymentButNeedsTerms ? (
-              /* Simplified view: payment done, just need terms acceptance */
               <>
-                <Flex align="center" gap={16} className="mb-6">
-                  <Box className="p-3 bg-green-100 rounded-lg">
-                    <Check size={32} className="text-green-700" />
-                  </Box>
-                  <Box>
-                    <Title as="h1" className="text-2xl mb-1">Almost There!</Title>
-                    <Text className="text-gray-600">Just accept our terms to access your cluster</Text>
-                  </Box>
-                </Flex>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3 bg-quartz-primary-shade2 rounded-lg">
+                    <Check size={32} className="text-primary" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-semibold mb-1">
+                      Almost There!
+                    </h1>
+                    <p className="text-muted-foreground">
+                      Just accept our terms to access your cluster
+                    </p>
+                  </div>
+                </div>
 
-                <Box className="border-t pt-6">
-                  <Box className="space-y-3 mb-6 p-4 bg-gray-50 rounded-lg border">
-                    <Text className="text-sm font-semibold text-gray-700 mb-3">Please accept to continue:</Text>
-                    <label className="flex items-start gap-3 cursor-pointer group">
-                      <Box className="relative mt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={termsAccepted}
-                          onChange={(e) => setTermsAccepted(e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <Box className={`w-5 h-5 border-2 rounded flex items-center justify-center transition-colors ${
-                          termsAccepted
-                            ? 'bg-[#1eb182] border-[#1eb182]'
-                            : 'border-gray-300 group-hover:border-gray-400'
-                        }`}>
-                          {termsAccepted && <Check size={14} className="text-white" />}
-                        </Box>
-                      </Box>
-                      <Text className="text-sm text-gray-700 font-mono">
-                        I agree to the{' '}
-                        <Link href="/terms" target="_blank" className="text-[#1eb182] hover:underline">Terms of Service</Link>,{' '}
-                        <Link href="/aup" target="_blank" className="text-[#1eb182] hover:underline">Acceptable Use Policy</Link>,{' '}
-                        and{' '}
-                        <Link href="/privacy" target="_blank" className="text-[#1eb182] hover:underline">Privacy Policy</Link>
-                      </Text>
-                    </label>
-
-                    <label className="flex items-start gap-3 cursor-pointer group">
-                      <Box className="relative mt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={marketingConsent}
-                          onChange={(e) => setMarketingConsent(e.target.checked)}
-                          className="sr-only peer"
-                        />
-                        <Box className={`w-5 h-5 border-2 rounded flex items-center justify-center transition-colors ${
-                          marketingConsent
-                            ? 'bg-[#1eb182] border-[#1eb182]'
-                            : 'border-gray-300 group-hover:border-gray-400'
-                        }`}>
-                          {marketingConsent && <Check size={14} className="text-white" />}
-                        </Box>
-                      </Box>
-                      <Text className="text-sm text-gray-600 font-mono">
-                        I would like to receive product updates and marketing communications (optional)
-                      </Text>
-                    </label>
-                  </Box>
+                <div className="border-t pt-6">
+                  {consentBlock}
 
                   <Button
-                    intent="primary"
                     size="lg"
                     className="w-full"
                     onClick={handleStartFree}
-                    isLoading={savingConsent}
+                    loading={savingConsent}
                     disabled={savingConsent || !termsAccepted}
                   >
                     {savingConsent ? (
@@ -312,130 +354,98 @@ export default function BillingSetup() {
                       </>
                     )}
                   </Button>
-                </Box>
+                </div>
               </>
             ) : (
-              /* Full view: need payment method setup */
               <>
-                <Flex align="center" gap={16} className="mb-6">
-                  <Box className="p-3 bg-yellow-100 rounded-lg">
-                    <CreditCard size={32} className="text-yellow-700" />
-                  </Box>
-                  <Box>
-                    <Title as="h1" className="text-2xl mb-1">Complete Your Setup</Title>
-                    <Text className="text-gray-600">Add a payment method to access your Hopsworks cluster</Text>
-                  </Box>
-                </Flex>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="p-3 bg-quartz-label-yellow-shade2 rounded-lg">
+                    <CreditCard
+                      size={32}
+                      className="text-quartz-label-orange"
+                    />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-semibold mb-1">
+                      Complete Your Setup
+                    </h1>
+                    <p className="text-muted-foreground">
+                      Add a payment method to access your Hopsworks cluster
+                    </p>
+                  </div>
+                </div>
 
-                <Box className="border-t pt-6">
-                  <Box className="bg-blue-50 p-4 rounded-lg mb-6">
-                    <Flex align="start" gap={12}>
-                      <AlertTriangle size={20} className="text-blue-600 mt-1" />
-                      <Box>
-                        <Text className="font-semibold text-blue-900 mb-2">
+                <div className="border-t pt-6">
+                  <div className="bg-quartz-label-blue-shade2 p-4 rounded-lg mb-6">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle
+                        size={20}
+                        className="text-quartz-label-blue mt-1 shrink-0"
+                      />
+                      <div>
+                        <p className="font-semibold text-quartz-label-blue mb-2">
                           Payment Required for Cluster Access
-                        </Text>
-                        <Text className="text-sm text-blue-800">
-                          To provision and access your Hopsworks cluster, you need to set up a payment method.
-                          You&apos;ll only be charged for the resources you actually use.
-                        </Text>
-                      </Box>
-                    </Flex>
-                  </Box>
+                        </p>
+                        <p className="text-sm">
+                          To provision and access your Hopsworks cluster, you
+                          need to set up a payment method. You&apos;ll only be
+                          charged for the resources you actually use.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-                  <Box className="space-y-4 mb-6">
-                    <Title as="h3" className="text-lg">What happens next:</Title>
-                    <Box className="pl-4 space-y-2">
-                      <Flex align="center" gap={8}>
-                        <Text className="text-2xl text-gray-400">1.</Text>
-                        <Text>You&apos;ll be redirected to our secure payment processor (Stripe)</Text>
-                      </Flex>
-                      <Flex align="center" gap={8}>
-                        <Text className="text-2xl text-gray-400">2.</Text>
-                        <Text>Add your payment information (no charges yet)</Text>
-                      </Flex>
-                      <Flex align="center" gap={8}>
-                        <Text className="text-2xl text-gray-400">3.</Text>
-                        <Text>Your cluster will be automatically provisioned</Text>
-                      </Flex>
-                      <Flex align="center" gap={8}>
-                        <Text className="text-2xl text-gray-400">4.</Text>
-                        <Text>Start building with pay-as-you-go pricing</Text>
-                      </Flex>
-                    </Box>
-                  </Box>
+                  <div className="space-y-4 mb-6">
+                    <h3 className="text-lg font-semibold">
+                      What happens next:
+                    </h3>
+                    <div className="pl-4 space-y-2">
+                      {[
+                        "You'll be redirected to our secure payment processor (Stripe)",
+                        'Add your payment information (no charges yet)',
+                        'Your cluster will be automatically provisioned',
+                        'Start building with pay-as-you-go pricing',
+                      ].map((step, i) => (
+                        <div key={step} className="flex items-center gap-2">
+                          <span className="text-2xl text-muted-foreground font-mono">
+                            {i + 1}.
+                          </span>
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-                  <Box className="bg-gray-50 p-4 rounded-lg mb-6">
-                    <Title as="h4" className="text-sm font-semibold mb-2">Pricing Overview</Title>
-                    <Box className="space-y-1">
-                      <Text className="text-sm text-gray-600">• Compute: $0.35 per credit (1 vCPU hour + 0.1 GB RAM)</Text>
-                      <Text className="text-sm text-gray-600">• Online Storage: $0.50/GB per month</Text>
-                      <Text className="text-sm text-gray-600">• Offline Storage: $0.03/GB per month</Text>
-                      <Text className="text-sm text-gray-600">• No upfront costs or minimum charges</Text>
-                      <Text className="text-sm text-gray-600">• Set a monthly spending cap anytime from your dashboard</Text>
-                    </Box>
-                  </Box>
+                  <div className="bg-muted p-4 rounded-lg mb-6">
+                    <h4 className="text-sm font-semibold mb-2">
+                      Pricing Overview
+                    </h4>
+                    <ul className="space-y-1 text-sm text-muted-foreground">
+                      <li>
+                        • Compute: $0.35 per credit (1 vCPU hour + 0.1 GB RAM)
+                      </li>
+                      <li>• Online Storage: $0.50/GB per month</li>
+                      <li>• Offline Storage: $0.03/GB per month</li>
+                      <li>• No upfront costs or minimum charges</li>
+                      <li>
+                        • Set a monthly spending cap anytime from your dashboard
+                      </li>
+                    </ul>
+                  </div>
 
-                  {/* Legal consent checkboxes - only if user hasn't accepted yet */}
-                  {needsTermsAcceptance && (
-                    <Box className="space-y-3 mb-6 p-4 bg-gray-50 rounded-lg border">
-                      <Text className="text-sm font-semibold text-gray-700 mb-3">Please accept to continue:</Text>
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <Box className="relative mt-0.5">
-                          <input
-                            type="checkbox"
-                            checked={termsAccepted}
-                            onChange={(e) => setTermsAccepted(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <Box className={`w-5 h-5 border-2 rounded flex items-center justify-center transition-colors ${
-                            termsAccepted
-                              ? 'bg-[#1eb182] border-[#1eb182]'
-                              : 'border-gray-300 group-hover:border-gray-400'
-                          }`}>
-                            {termsAccepted && <Check size={14} className="text-white" />}
-                          </Box>
-                        </Box>
-                        <Text className="text-sm text-gray-700 font-mono">
-                          I agree to the{' '}
-                          <Link href="/terms" target="_blank" className="text-[#1eb182] hover:underline">Terms of Service</Link>,{' '}
-                          <Link href="/aup" target="_blank" className="text-[#1eb182] hover:underline">Acceptable Use Policy</Link>,{' '}
-                          and{' '}
-                          <Link href="/privacy" target="_blank" className="text-[#1eb182] hover:underline">Privacy Policy</Link>
-                        </Text>
-                      </label>
+                  {needsTermsAcceptance && consentBlock}
 
-                      <label className="flex items-start gap-3 cursor-pointer group">
-                        <Box className="relative mt-0.5">
-                          <input
-                            type="checkbox"
-                            checked={marketingConsent}
-                            onChange={(e) => setMarketingConsent(e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <Box className={`w-5 h-5 border-2 rounded flex items-center justify-center transition-colors ${
-                            marketingConsent
-                              ? 'bg-[#1eb182] border-[#1eb182]'
-                              : 'border-gray-300 group-hover:border-gray-400'
-                          }`}>
-                            {marketingConsent && <Check size={14} className="text-white" />}
-                          </Box>
-                        </Box>
-                        <Text className="text-sm text-gray-600 font-mono">
-                          I would like to receive product updates and marketing communications (optional)
-                        </Text>
-                      </label>
-                    </Box>
-                  )}
-
-                  <Box className="space-y-4">
+                  <div className="space-y-4">
                     <Button
-                      intent="primary"
                       size="lg"
                       className="w-full"
                       onClick={handleSetupPayment}
-                      isLoading={loading}
-                      disabled={loading || savingConsent || (needsTermsAcceptance && !termsAccepted)}
+                      loading={loading}
+                      disabled={
+                        loading ||
+                        savingConsent ||
+                        (needsTermsAcceptance && !termsAccepted)
+                      }
                     >
                       {loading ? (
                         'Redirecting to Stripe...'
@@ -448,22 +458,28 @@ export default function BillingSetup() {
                       )}
                     </Button>
 
-                    <Box className="relative">
-                      <Box className="absolute inset-0 flex items-center">
-                        <Box className="w-full border-t border-gray-200" />
-                      </Box>
-                      <Box className="relative flex justify-center">
-                        <Text className="px-4 bg-white text-sm text-gray-500">or</Text>
-                      </Box>
-                    </Box>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center">
+                        <span className="px-4 bg-card text-sm text-muted-foreground">
+                          or
+                        </span>
+                      </div>
+                    </div>
 
                     <Button
-                      intent="secondary"
+                      variant="secondary"
                       size="lg"
                       className="w-full"
                       onClick={handleStartFree}
-                      disabled={loading || savingConsent || (needsTermsAcceptance && !termsAccepted)}
-                      isLoading={savingConsent}
+                      loading={savingConsent}
+                      disabled={
+                        loading ||
+                        savingConsent ||
+                        (needsTermsAcceptance && !termsAccepted)
+                      }
                     >
                       {savingConsent ? (
                         'Setting up your account...'
@@ -474,21 +490,21 @@ export default function BillingSetup() {
                         </>
                       )}
                     </Button>
-                    <Text className="text-sm text-gray-500 text-center">
+                    <p className="text-sm text-muted-foreground text-center">
                       1 project included, no credit card required
-                    </Text>
-                  </Box>
+                    </p>
+                  </div>
 
-                  <Text className="text-xs text-gray-400 text-center mt-6">
-                    You can upgrade anytime from your dashboard.
-                    Payment information is securely processed by Stripe.
-                  </Text>
-                </Box>
+                  <p className="text-xs text-muted-foreground text-center mt-6">
+                    You can upgrade anytime from your dashboard. Payment
+                    information is securely processed by Stripe.
+                  </p>
+                </div>
               </>
             )}
           </Card>
-        </Box>
-      </Box>
+        </div>
+      </div>
     </>
   );
 }

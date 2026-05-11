@@ -1,14 +1,18 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { Resend } from 'resend';
+import { requireInternalAuth } from '@/lib/internal-auth';
 
 /**
  * Alert endpoint for user downgrades (postpaid → free with >1 project)
- * Called internally by /api/billing when lazy downgrade triggers
+ * Called internally by /api/billing when lazy downgrade triggers.
+ * Caller must forward `Authorization: Bearer ${INTERNAL_API_SECRET}`.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  if (!requireInternalAuth(req, res)) return;
 
   const { userId, email, projectCount, deadline } = req.body;
 
@@ -21,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Send email to user
   if (process.env.RESEND_API_KEY) {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    const dashboardUrl = `${process.env.AUTH0_BASE_URL || 'https://run.hopsworks.ai'}/dashboard`;
+    const dashboardUrl = `${process.env.AUTH0_BASE_URL}/dashboard`;
     const deadlineDate = deadline ? new Date(deadline).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',

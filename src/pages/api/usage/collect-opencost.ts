@@ -4,6 +4,8 @@ import { OpenCostDirect } from '../../../lib/opencost-direct';
 import { getUserProjects, getAllProjects } from '../../../lib/hopsworks-api';
 import { calculateCreditsUsed, calculateDollarAmount } from '../../../config/billing-rates';
 import { checkSpendingCap } from '../../../lib/spending-alerts';
+import { requireCronAuth } from '../../../lib/internal-auth';
+import { currentClusterEnvironment } from '../../../lib/environment';
 
 type ProjectBreakdownEntry = {
   name: string;
@@ -55,15 +57,7 @@ const supabaseAdmin = createClient(
 );
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Verify this is called by Vercel Cron with proper authentication
-  const authHeader = req.headers.authorization;
-  const expectedAuth = `Bearer ${process.env.CRON_SECRET}`;
-  
-  // Always check CRON_SECRET if it's configured
-  if (process.env.CRON_SECRET && authHeader !== expectedAuth) {
-    console.error('OpenCost collection unauthorized attempt');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireCronAuth(req, res)) return;
 
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -197,10 +191,12 @@ async function collectOpenCostMetrics() {
   console.log(`Starting OpenCost collection for: ${currentDate} hour ${currentHourUtc} (UTC)`);
 
   // Get ALL Hopsworks clusters with kubeconfig (status doesn't matter for billing)
-  // 'inactive' clusters may still have users generating costs
+  // 'inactive' clusters may still have users generating costs.
+  // Env filter prevents prod cron from exec'ing kubectl against a staging kubeconfig.
   const { data: clusters, error: clusterError } = await supabaseAdmin
     .from('hopsworks_clusters')
     .select('*')
+    .eq('environment', currentClusterEnvironment())
     .not('kubeconfig', 'is', null);
 
   if (clusterError || !clusters || clusters.length === 0) {

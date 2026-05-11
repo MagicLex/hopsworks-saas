@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box } from 'tailwind-quartz';
 import Navbar from './Navbar';
 import Footer from './Footer';
+import { EnvironmentBanner } from './EnvironmentBanner';
+import { cn } from '@/lib/utils';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,13 +11,12 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, className }) => {
   return (
-    <Box className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-muted">
+      <EnvironmentBanner />
       <Navbar />
-      <Box as="main" className={`flex-1 ${className || ''}`}>
-        {children}
-      </Box>
+      <main className={cn('flex-1', className)}>{children}</main>
       <Footer />
-    </Box>
+    </div>
   );
 };
 

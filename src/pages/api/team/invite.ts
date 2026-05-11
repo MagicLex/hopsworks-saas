@@ -1,7 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireActiveSession } from '@/lib/require-active-session';
 import { createClient } from '@supabase/supabase-js';
-import { randomBytes } from 'crypto';
 import { Resend } from 'resend';
 import { rateLimit } from '../../../middleware/rateLimit';
 import { getPostHogClient } from '@/lib/posthog-server';
@@ -10,6 +9,7 @@ import {
   validateInviteRequest,
   calculateInviteExpiry
 } from '@/lib/invite-validation';
+import { generateInviteToken, hashInviteToken } from '@/lib/invite-token';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -93,16 +93,17 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
         return res.status(400).json({ error: 'Invite already sent to this email' });
       }
 
-      // Generate invite token
-      const token = randomBytes(32).toString('hex');
+      // Generate invite token. Plaintext goes in the email URL only;
+      // DB stores SHA256 hash so a leaked table can't be replayed.
+      const token = generateInviteToken();
+      const tokenHash = hashInviteToken(token);
 
-      // Create invite with project role and auto-assign preference
       const { data: invite, error: inviteError } = await supabase
         .from('team_invites')
         .insert({
           account_owner_id: userId,
           email: normalizedEmail,
-          token,
+          token_hash: tokenHash,
           project_role: role,
           auto_assign_projects: autoAssignProjects,
           expires_at: calculateInviteExpiry().toISOString()
