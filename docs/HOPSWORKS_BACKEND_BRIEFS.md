@@ -148,7 +148,8 @@ X-Hopsworks-Signature: sha256=<hmac-hex>
 
 Payload shapes:
 
-- `user.*`: `{userId, username, email, status}` (status name from `UserAccountStatus` enum). Receivers compare against their own state to derive activated/deactivated transitions; brief #3 originally proposed split events but the underlying `UserAccountHandler.update` does not surface old vs new status, so the SaaS layer reconciles instead. The `status` field carries everything needed.
+- `user.created`, `user.updated`: `{userId, username, email, status}` (status name from `UserAccountStatus` enum). Receivers compare against their own state to derive activated/deactivated transitions; brief #3 originally proposed split events but the underlying `UserAccountHandler.update` does not surface old vs new status, so the SaaS layer reconciles instead. The `status` field carries everything needed.
+- `user.deleted`: `{userId, username}` only. The `Users` row is gone by the time the OperationLog timer fires, so `email` and `status` are not available. `userId` is the stable numeric identifier captured at log-save time; match on it (not on the mutable `username`).
 - `project.*`: `{projectId, name, ownerId, creationStatus}`.
 - `project.member.*`: `{projectId, userId, role}` (role omitted on `removed`).
 
@@ -315,11 +316,12 @@ Concrete gates added in SAAS_MANAGED mode:
 - `GET /variables/{id}`: locked to `HOPS_ADMIN` regardless of the variable's `VariablesVisibility` flag. In standalone, USER-visibility variables remain readable; in SAAS_MANAGED, every variable lookup requires admin.
 - `GET /admin/projects/{id}/kube/clusterinfo`: returns `403 REST_ACCESS_CONTROL` to non-admin users in SAAS_MANAGED. Standalone behaviour unchanged.
 - OAuth-flow `accountType: OAUTH2` and `REMOTE_ACCOUNT_TYPE` users continue to authenticate through the existing remote-user path (untouched).
+- `GET /variables/authenticationStatus` (anonymous, JWT-not-required): now also returns `managementMode` and `saasEntryPointUrl`. The frontend reads this on the login page to skip the native form and redirect to the SaaS entry point. Required because the `/variables/{id}` lockdown above also blocks pre-login reads of `MANAGEMENT_MODE` itself.
 
 Two new `Settings` keys:
 
 - `MANAGEMENT_MODE`: `STANDALONE` | `SAAS_MANAGED` (default `STANDALONE`).
-- `SAAS_ENTRY_POINT_URL`: e.g. `https://run.hopsworks.ai`. Echoed in the 403 `devMsg` so callers know where to redirect.
+- `SAAS_ENTRY_POINT_URL`: e.g. `https://run.hopsworks.ai`. Echoed in the 403 `devMsg` so callers know where to redirect, and surfaced on `authenticationStatus` so the frontend can redirect proactively.
 
 The flip is one DB-backed setting (`hopsworks.variables`); no migration needed.
 
@@ -328,7 +330,7 @@ The flip is one DB-backed setting (`hopsworks.variables`); no migration needed.
 - Set `MANAGEMENT_MODE=SAAS_MANAGED` and `SAAS_ENTRY_POINT_URL=https://run.hopsworks.ai` on every SaaS cluster (one-time, via the existing `PUT /admin/variables/{name}` admin endpoint or terraform/helm config).
 - `updateHopsworksUserStatus(..., 3)` in `src/lib/hopsworks-api.ts:393-419`: keep as a defense-in-depth, but the urgency drops dramatically. A soft-deleted user can no longer authenticate even if propagation is delayed.
 - `src/pages/api/auth/sync-user.ts`: the "block soft-deleted users at the run.hopsworks.ai layer" path stays. The "user who skips that layer entirely" hole is now closed at the cluster.
-- Frontend can stop rendering the native login form on SaaS clusters (the cluster will reject anyway, but UX is cleaner).
+- Frontend hides the native login form when `authenticationStatus.managementMode === "SAAS_MANAGED"` and redirects to `authenticationStatus.saasEntryPointUrl` (the cluster will reject the native form regardless, but UX is cleaner).
 
 ### Known scope limits (follow-up work)
 
@@ -339,7 +341,8 @@ The compute-info hide is targeted rather than exhaustive. Job execution DTOs sti
 - `hopsworks-common/.../util/Settings.java`: `MANAGEMENT_MODE`, `SAAS_ENTRY_POINT_URL`, `Settings.isSaasManaged()` helper
 - `hopsworks-rest-utils/.../RESTCodes.java`: `UserErrorCode.SAAS_MANAGED_AUTH_REQUIRED` (160072)
 - `hopsworks-api/.../user/AuthService.java`: `rejectIfSaasManaged()` helper, called from `login`, `register`, `recoverPassword`, `recoverQRCode`
-- `hopsworks-api/.../util/VariablesService.java`: `getVar` admin-gates all variables in SAAS_MANAGED
+- `hopsworks-api/.../util/VariablesService.java`: `getVar` admin-gates all variables in SAAS_MANAGED; `getAuthenticationStatus` surfaces `managementMode` and `saasEntryPointUrl` for the login page
+- `hopsworks-api/.../util/AuthenticationStatus.java`: DTO carries the two new fields (JWT-not-required, anonymous-readable)
 - `hopsworks-api/.../kube/project/KubeProjectResourceService.java`: `getInfo` admin-gates `clusterinfo` in SAAS_MANAGED
 
 ---
