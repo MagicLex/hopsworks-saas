@@ -17,7 +17,7 @@ PRs             → *-git-<branch>.vercel.app  (preview, ephemeral)
 | **Database** (Supabase) | **Same as production** | Bridge testing, not data testing. Schema is the same; we want to verify our code talks correctly to upstream systems against real shapes. |
 | **Auth0 application** | Separate app, same tenant | Callback URLs differ; we don't want staging to issue tokens against the prod Web Origin allow-list. |
 | **Stripe** | Test mode keys + test webhook | Real charges would happen otherwise. |
-| **Hopsworks cluster** | Test cluster row in `hopsworks_clusters` | Don't pollute prod cluster with experimental project quotas / suspension flags. |
+| **Hopsworks cluster** | Test cluster row `saas-5-test` (`environment='staging'`) | Don't pollute prod cluster with experimental project quotas / suspension flags. Routing in `cluster-assignment.ts` filters on `environment = currentClusterEnvironment()`. |
 | **Crons** | Disabled on staging | Vercel runs `vercel.json` crons on Production deployment only. Trigger manually for testing. |
 
 > **Loud red banner across every staging page**: writes go to the prod DB.
@@ -47,14 +47,38 @@ into staging's `STRIPE_WEBHOOK_SECRET`.
 
 ### 3. Hopsworks — test cluster row
 
-Insert a row into `hopsworks_clusters` (the prod table — it's shared) marking
-a non-production cluster as the staging target. The simplest pattern:
-add a column `environment` (or reuse `status`) so the assignment logic in
-`lib/cluster-assignment.ts` can pick the test cluster when staging users sign up.
+`hopsworks_clusters` has an `environment` column (`'production' | 'staging'`, default `'production'`,
+added in migration `0002_cluster_environment.sql`). Auto-assignment in
+`lib/cluster-assignment.ts` filters on `currentClusterEnvironment()` so a
+staging signup lands on `environment='staging'` rows, and a prod signup on
+`environment='production'`.
 
-If that's too invasive for now, the pragma is: in staging, hand-update the
-test user's `user_hopsworks_assignments` row to point at the test cluster's
-UUID. One-time cost.
+Current staging row:
+
+| Column | Value |
+|---|---|
+| `name` | `saas-5-test` |
+| `api_url` | `https://10.112.37.130` (RFC1918, OVH VPN only) |
+| `kubeconfig` | stored in column (cluster `10.112.37.10:6443`) |
+| `environment` | `staging` |
+| `status` | `active` |
+| `region` | `eu-west-test` |
+
+To add or rotate a staging cluster:
+
+```sql
+\set kc `cat /path/to/kubeconfig`
+INSERT INTO hopsworks_clusters (name, api_url, api_key, kubeconfig, max_users, status, environment, region)
+VALUES ('<name>', 'https://<ip>', '<admin-api-key>', :'kc', 100, 'active', 'staging', '<region>')
+ON CONFLICT (name) DO UPDATE SET
+  api_url = EXCLUDED.api_url, api_key = EXCLUDED.api_key,
+  kubeconfig = EXCLUDED.kubeconfig, environment = EXCLUDED.environment;
+```
+
+Re-routing an *existing* user from prod to staging (or back) is manual:
+auto-assignment short-circuits once a `user_hopsworks_assignments` row exists.
+Update `hopsworks_cluster_id` directly. Only do this if the user has no live
+projects on the source cluster.
 
 ### 4. Vercel — branch + domain + env vars
 
@@ -74,18 +98,19 @@ UUID. One-time cost.
    | `CRON_SECRET` | (existing) | new random hex |
    | `INTERNAL_API_SECRET` | new random hex | new random hex |
 
-   Still to set manually for staging (Preview):
+   Still to set manually for staging (Preview + custom env `staging`):
 
-   | Var | Preview value |
+   | Var | Value |
    |---|---|
    | `AUTH0_BASE_URL` | `https://dev.run.hopsworks.ai` |
-   | `AUTH0_CLIENT_ID` | staging Auth0 app id |
-   | `AUTH0_CLIENT_SECRET` | staging Auth0 app secret |
+   | `AUTH0_CLIENT_ID` | staging Auth0 app id (or prod app if `localhost:3000` is whitelisted) |
+   | `AUTH0_CLIENT_SECRET` | matching client secret |
    | `AUTH0_SECRET` | `openssl rand -hex 32` (cookie signing) |
    | `STRIPE_SECRET_KEY` | `sk_test_*` |
    | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_*` |
    | `STRIPE_WEBHOOK_SECRET` | test-mode `whsec_*` |
    | `RESEND_FROM_EMAIL` | `Hopsworks Staging <no-reply@...>` (recommended) |
+   | `HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET` | HMAC-SHA256 key matching the cluster's `LIFECYCLE_WEBHOOK_SECRET` setting (brief #3) |
 
    DB / Supabase / HubSpot env vars: copy production values to Preview verbatim
    (we share those backends).
