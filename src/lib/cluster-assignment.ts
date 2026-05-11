@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createHopsworksOAuthUser, getHopsworksUserByEmail, getHopsworksUserById, updateUserProjectLimit } from './hopsworks-api';
 import { sendClusterAssigned } from './marketing-webhooks';
+import { currentClusterEnvironment } from './environment';
 
 // ============================================================================
 // Pure logic functions - testable without DB/API dependencies
@@ -366,11 +367,14 @@ export async function assignUserToCluster(
       };
     }
 
-    // Find available cluster with capacity
+    // Find available cluster with capacity in the current environment.
+    // Staging (dev.run.hopsworks.ai) and production share the same Supabase DB,
+    // so the env filter is what keeps a staging signup off a prod cluster (and vice versa).
     const { data: clusters } = await supabaseAdmin
       .from('hopsworks_clusters')
       .select('id, name, current_users, max_users')
       .eq('status', 'active')
+      .eq('environment', currentClusterEnvironment())
       .order('current_users', { ascending: true });
 
     const availableCluster = clusters?.find(c => c.current_users < c.max_users);

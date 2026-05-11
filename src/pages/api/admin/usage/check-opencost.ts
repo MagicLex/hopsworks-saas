@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { requireAdmin } from '../../../../middleware/adminAuth';
 import { createClient } from '@supabase/supabase-js';
 import { OpenCostDirect } from '../../../../lib/opencost-direct';
+import { currentClusterEnvironment } from '../../../../lib/environment';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,11 +15,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   try {
-    // Get the active cluster
+    // Get the active cluster in the current environment.
+    // Note: .single() will throw if there's more than one active cluster per env;
+    // this debug endpoint assumes one. If you run multiple, pass ?clusterId=<id> explicitly.
     const { data: cluster } = await supabaseAdmin
       .from('hopsworks_clusters')
       .select('*')
       .eq('status', 'active')
+      .eq('environment', currentClusterEnvironment())
       .single();
 
     if (!cluster) {
