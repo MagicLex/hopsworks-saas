@@ -38,8 +38,9 @@ Full cluster reference: `docs/operations/saas-cluster.md`.
 |-----|----------|----------|------|
 | OpenCost collection | hourly `0 * * * *` | `POST /api/usage/collect-opencost` | `CRON_SECRET` bearer |
 | Stripe meter sync | daily `0 3 * * *` | `POST /api/billing/sync-stripe` | `CRON_SECRET` bearer |
-| Project sync | every 30min `*/30 * * * *` | `POST /api/cron/sync-projects` | `CRON_SECRET` bearer |
 | Data integrity check | daily `0 6 * * *` | `POST /api/cron/check-data-integrity` | `CRON_SECRET` bearer |
+
+> **Note**: the former `/api/cron/sync-projects` (every 30min) was retired with brief #3. Project state is now reconciled event-driven via the lifecycle webhook receiver. Don't reintroduce a polling cron without first checking that webhook delivery has degraded.
 
 Vercel cron is the fallback. Primary scheduler is Windmill (`https://auto.hops.io`). If both run, the handlers are re-entrant; usage rows upsert on `(user_id, date, hour)`.
 
