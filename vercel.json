@@ -9,10 +9,6 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/sync-projects",
-      "schedule": "*/30 * * * *"
-    },
-    {
       "path": "/api/cron/check-data-integrity",
       "schedule": "0 6 * * *"
     }
@@ -23,9 +19,6 @@
     },
     "src/pages/api/billing/sync-stripe.ts": {
       "maxDuration": 60
-    },
-    "src/pages/api/cron/sync-projects.ts": {
-      "maxDuration": 120
     },
     "src/pages/api/cron/check-data-integrity.ts": {
       "maxDuration": 60
