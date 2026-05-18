@@ -1,5 +1,11 @@
 import { NextApiResponse } from 'next';
 
+function formatError(error: unknown): string {
+  if (error instanceof Error) return `${error.message}\n${error.stack}`;
+  if (typeof error === 'object' && error !== null) return JSON.stringify(error, null, 2);
+  return String(error);
+}
+
 async function sendToSlack(message: string, context?: string) {
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) return;
@@ -22,7 +28,7 @@ export async function alertBillingFailure(
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) return;
 
-  const errorMsg = error instanceof Error ? error.message : String(error);
+  const errorMsg = formatError(error);
   const detailsStr = details ? `\n${JSON.stringify(details, null, 2)}` : '';
 
   const text = `:credit_card: :x: *Billing Failure*
@@ -45,8 +51,7 @@ export function handleApiError(error: unknown, res: NextApiResponse, context?: s
 
   // Send to Slack in production
   if (process.env.NODE_ENV === 'production') {
-    const message = error instanceof Error ? `${error.message}\n${error.stack}` : String(error);
-    sendToSlack(message, context);
+    sendToSlack(formatError(error), context);
   }
 
   // In production, return generic error messages
