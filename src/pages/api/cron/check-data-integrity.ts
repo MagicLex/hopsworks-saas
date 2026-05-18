@@ -98,6 +98,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const issues: IntegrityIssue[] = [];
 
   try {
+  // PRE-CHECK: Supabase REST API reachable. If this fails (e.g. project paused
+  // returning HTTP 402), every subsequent `.from(...).select(...)` would silently
+  // return null and the report would lie ("0 users / all healthy"). Fail loud.
+  const supabaseHealth = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/users?select=id&limit=1`,
+    {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+      }
+    }
+  );
+  if (!supabaseHealth.ok) {
+    throw new Error(
+      `Supabase REST unreachable: HTTP ${supabaseHealth.status} ${supabaseHealth.statusText}. ` +
+      `Project likely paused or billing failed.`
+    );
+  }
+
   // CHECK 1: hopsworks_user_id desync between users and assignments
   const { data: hwIdDesync } = await supabaseAdmin.rpc('check_hopsworks_id_desync');
 
