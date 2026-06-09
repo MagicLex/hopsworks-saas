@@ -193,16 +193,19 @@ async function handleProjectCreated(payload: LifecyclePayload) {
 }
 
 async function handleProjectDeleted(payload: LifecyclePayload) {
-  const projectId = payload.data.projectId;
-  if (typeof projectId !== 'number') {
-    console.warn('[Hopsworks webhook] project.deleted missing numeric projectId', payload.data);
+  // Per the EE contract (hopsworks-ee/docs/lifecycle-webhook.md), project.deleted
+  // carries only {name}: the project row is gone when the outbox timer fires.
+  // Project names are globally unique in Hopsworks, so name is a safe key.
+  const name = payload.data.name;
+  if (typeof name !== 'string' || !name) {
+    console.warn('[Hopsworks webhook] project.deleted missing name', payload.data);
     return;
   }
 
   const { error } = await supabaseAdmin
     .from('user_projects')
     .update({ status: 'inactive', last_seen_at: new Date().toISOString() })
-    .eq('project_id', projectId);
+    .eq('project_name', name);
   if (error) throw error;
-  console.log(`[Hopsworks webhook] project.deleted: marked project_id=${projectId} inactive`);
+  console.log(`[Hopsworks webhook] project.deleted: marked project_name=${name} inactive`);
 }
