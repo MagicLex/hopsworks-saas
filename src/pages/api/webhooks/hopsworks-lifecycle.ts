@@ -95,11 +95,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         break;
       case 'user.created':
       case 'user.updated':
+        await handleUserUpserted(payload);
+        break;
       case 'project.member.added':
       case 'project.member.updated':
+        await handleMemberUpserted(payload);
+        break;
       case 'project.member.removed':
-        // v2 — not yet wired. Ack to drain the outbox.
-        console.log(`[Hopsworks webhook] ${payload.event} not yet handled, ack'd`);
+        await handleMemberRemoved(payload);
         break;
       default:
         console.warn(`[Hopsworks webhook] Unknown event type: ${payload.event}`);
@@ -109,6 +112,144 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error(`[Hopsworks webhook] Handler error for ${payload.event}:`, err);
     return res.status(500).json({ error: 'Handler failed' });
   }
+}
+
+async function handleUserUpserted(payload: LifecyclePayload) {
+  const { userId, username, email, status } = payload.data as {
+    userId?: number;
+    username?: string;
+    email?: string;
+    status?: string;
+  };
+  if (typeof userId !== 'number' || typeof username !== 'string') {
+    console.warn(`[Hopsworks webhook] ${payload.event} malformed data`, payload.data);
+    return;
+  }
+
+  // Match by hopsworks_user_id first (already linked), fall back to email (first sighting).
+  let { data: user, error: lookupErr } = await supabaseAdmin
+    .from('users')
+    .select('id, hopsworks_user_id, hopsworks_username')
+    .eq('hopsworks_user_id', userId)
+    .maybeSingle();
+  if (lookupErr) throw lookupErr;
+
+  if (!user && email) {
+    const byEmail = await supabaseAdmin
+      .from('users')
+      .select('id, hopsworks_user_id, hopsworks_username')
+      .eq('email', email)
+      .maybeSingle();
+    if (byEmail.error) throw byEmail.error;
+    user = byEmail.data;
+  }
+
+  if (!user) {
+    console.log(
+      `[Hopsworks webhook] ${payload.event}: no SaaS user for hopsworks_user_id=${userId} email=${email ?? 'n/a'}, skipping`
+    );
+    return;
+  }
+
+  if (user.hopsworks_user_id !== userId || user.hopsworks_username !== username) {
+    const link = { hopsworks_user_id: userId, hopsworks_username: username };
+    const { error: userErr } = await supabaseAdmin.from('users').update(link).eq('id', user.id);
+    if (userErr) throw userErr;
+    const { error: assignErr } = await supabaseAdmin
+      .from('user_hopsworks_assignments')
+      .update(link)
+      .eq('user_id', user.id);
+    if (assignErr) throw assignErr;
+    console.log(`[Hopsworks webhook] ${payload.event}: linked SaaS user ${user.id} to hopsworks ${username} (${userId})`);
+  }
+
+  console.log(`[Hopsworks webhook] ${payload.event}: user ${user.id} hopsworks status=${status ?? 'n/a'}`);
+}
+
+async function handleMemberUpserted(payload: LifecyclePayload) {
+  const { projectId, userId, role } = payload.data as {
+    projectId?: number;
+    userId?: number;
+    role?: string;
+  };
+  if (typeof projectId !== 'number' || typeof userId !== 'number' || typeof role !== 'string') {
+    console.warn(`[Hopsworks webhook] ${payload.event} malformed data`, payload.data);
+    return;
+  }
+
+  const { data: member, error: memberErr } = await supabaseAdmin
+    .from('users')
+    .select('id, account_owner_id')
+    .eq('hopsworks_user_id', userId)
+    .maybeSingle();
+  if (memberErr) throw memberErr;
+  if (!member) {
+    console.log(`[Hopsworks webhook] ${payload.event}: no SaaS user for hopsworks_user_id=${userId}, skipping`);
+    return;
+  }
+
+  // Project owners are tracked in user_projects, not project_member_roles.
+  const { data: ownedProject } = await supabaseAdmin
+    .from('user_projects')
+    .select('id')
+    .eq('user_id', member.id)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (ownedProject) return;
+
+  const { data: projectRow, error: projectErr } = await supabaseAdmin
+    .from('user_projects')
+    .select('user_id, project_name, namespace')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (projectErr) throw projectErr;
+  if (!projectRow) {
+    console.log(`[Hopsworks webhook] ${payload.event}: untracked project_id=${projectId}, skipping`);
+    return;
+  }
+
+  const { error: upsertErr } = await supabaseAdmin.from('project_member_roles').upsert(
+    {
+      member_id: member.id,
+      account_owner_id: member.account_owner_id ?? projectRow.user_id,
+      project_id: projectId,
+      project_name: projectRow.project_name,
+      project_namespace: projectRow.namespace,
+      role,
+      synced_to_hopsworks: true,
+      last_sync_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'member_id,project_id' }
+  );
+  if (upsertErr) throw upsertErr;
+  console.log(
+    `[Hopsworks webhook] ${payload.event}: member ${member.id} project_id=${projectId} role=${role}`
+  );
+}
+
+async function handleMemberRemoved(payload: LifecyclePayload) {
+  const { projectId, userId } = payload.data as { projectId?: number; userId?: number };
+  if (typeof projectId !== 'number' || typeof userId !== 'number') {
+    console.warn('[Hopsworks webhook] project.member.removed malformed data', payload.data);
+    return;
+  }
+
+  const { data: member, error: memberErr } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .eq('hopsworks_user_id', userId)
+    .maybeSingle();
+  if (memberErr) throw memberErr;
+  if (!member) return;
+
+  const { error } = await supabaseAdmin
+    .from('project_member_roles')
+    .delete()
+    .eq('member_id', member.id)
+    .eq('project_id', projectId);
+  if (error) throw error;
+  console.log(`[Hopsworks webhook] project.member.removed: member ${member.id} project_id=${projectId}`);
 }
 
 async function handleUserDeleted(payload: LifecyclePayload) {
