@@ -149,10 +149,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
       } else if (action === 'remove') {
-        // Remove user from project
-        // Note: Hopsworks API doesn't have a direct remove endpoint, 
-        // you'd need to implement this in hopsworks-team.ts
-        return res.status(501).json({ error: 'Remove functionality not yet implemented' });
+        const { removeUserFromProject } = await import('../../../lib/hopsworks-team');
+        const { validateProject } = await import('../../../lib/hopsworks-validation');
+
+        const project = await validateProject(credentials, projectName);
+        if (!project) {
+          return res.status(404).json({ error: `Project '${projectName}' not found in Hopsworks` });
+        }
+
+        await removeUserFromProject(credentials, project.id, hopsworksUserId);
+
+        await supabaseAdmin
+          .from('project_member_roles')
+          .delete()
+          .eq('member_id', userId)
+          .eq('project_id', project.id);
+
+        return res.status(200).json({
+          message: `User removed from project ${projectName}`,
+          project: projectName
+        });
 
       } else {
         return res.status(400).json({ error: 'Invalid action' });

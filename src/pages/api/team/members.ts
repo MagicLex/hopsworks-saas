@@ -106,7 +106,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Verify the member belongs to this account
       const { data: member, error: memberError } = await supabase
         .from('users')
-        .select('account_owner_id, email')
+        .select('account_owner_id, email, hopsworks_user_id')
         .eq('id', memberId)
         .single();
 
@@ -125,7 +125,35 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      // Delete project_member_roles to clean up project access records
+      // Remove the member from each Hopsworks project team (mirror upstream),
+      // then clean up local project access records. Upstream failures are logged
+      // but don't block: the member is already suspended.
+      const { data: memberRoles } = await supabase
+        .from('project_member_roles')
+        .select('project_id, project_name')
+        .eq('member_id', memberId);
+
+      if (memberRoles?.length && member.hopsworks_user_id) {
+        const { data: ownerAssignment } = await supabase
+          .from('user_hopsworks_assignments')
+          .select('hopsworks_clusters!inner(api_url, api_key)')
+          .eq('user_id', userId)
+          .single();
+        const cluster = (ownerAssignment as any)?.hopsworks_clusters;
+
+        if (cluster) {
+          const { removeUserFromProject } = await import('@/lib/hopsworks-team');
+          const credentials = { apiUrl: cluster.api_url, apiKey: cluster.api_key };
+          for (const memberRole of memberRoles) {
+            try {
+              await removeUserFromProject(credentials, memberRole.project_id, member.hopsworks_user_id);
+            } catch (error) {
+              console.error(`Failed to remove ${memberId} from Hopsworks project ${memberRole.project_name}:`, error);
+            }
+          }
+        }
+      }
+
       const { error: rolesDeleteError } = await supabase
         .from('project_member_roles')
         .delete()

@@ -113,17 +113,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             });
           }
 
-          // This is a role change - only allow if already synced to Hopsworks
-          if (!existingRole.synced_to_hopsworks) {
-            return res.status(400).json({
-              error: `Cannot change role for ${teamMember.email} in ${projectName} - initial sync pending or failed`
+          // Role change: update upstream first, then mirror locally
+          try {
+            const { updateMemberRole } = await import('@/lib/hopsworks-team');
+            await updateMemberRole(credentials, existingRole.project_id, teamMember.hopsworks_user_id, role);
+          } catch (error: any) {
+            console.error(`Failed to update role in Hopsworks:`, error);
+            return res.status(502).json({
+              error: `Failed to update role in Hopsworks: ${error.message || 'unknown error'}`
             });
           }
 
-          // For role changes, we should update not create
-          // But Hopsworks doesn't support role updates via API yet
-          return res.status(400).json({
-            error: 'Role changes are not yet supported. Please remove the user and re-add with the new role.'
+          const { error: roleUpdateError } = await supabaseAdmin
+            .from('project_member_roles')
+            .update({
+              role,
+              synced_to_hopsworks: true,
+              last_sync_at: new Date().toISOString(),
+              sync_error: null,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingRole.id);
+
+          if (roleUpdateError) {
+            console.error('Failed to save role change to database:', roleUpdateError);
+          }
+
+          return res.status(200).json({
+            message: `Updated ${teamMember.email} to ${role} in ${projectName}`,
+            project: projectName,
+            role,
+            synced: true
           });
         }
 
