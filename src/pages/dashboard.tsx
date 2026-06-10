@@ -717,57 +717,11 @@ export default function Dashboard() {
                                 billingMode: billing?.billingMode,
                               });
 
-                              // Redirect to auto-OAuth URL for automatic login with Auth0
+                              // Auto-OAuth login: the cluster creates the Hopsworks
+                              // user on first login; the user.created lifecycle
+                              // webhook links it back to the SaaS account.
                               const autoOAuthUrl = `${instance.endpoint}/autoOAuth?providerName=Auth0`;
                               window.open(autoOAuthUrl, '_blank');
-
-                              // Only trigger sync if user needs it (missing Hopsworks info or payment but no projects)
-                              const needsSync = !hopsworksInfo?.hopsworksUser ||
-                                              (billing?.hasPaymentMethod && (!hopsworksInfo?.projects || hopsworksInfo.projects.length === 0));
-
-                              if (needsSync) {
-                                // Start retrying after 2s with exponential backoff
-                                let retryCount = 0;
-                                const maxRetries = 5;
-                                const baseDelay = 2000; // 2 seconds base
-
-                                const attemptSync = async () => {
-                                  try {
-                                    const response = await fetch('/api/auth/sync-user', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({})
-                                    });
-
-                                    if (response.ok) {
-                                      console.log('Successfully synced user after Hopsworks access');
-                                      return;
-                                    }
-
-                                    // If not OK, maybe retry
-                                    if (retryCount < maxRetries) {
-                                      retryCount++;
-                                      const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
-                                      console.log(`Sync failed, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-                                      setTimeout(attemptSync, delay);
-                                    } else {
-                                      console.error('Failed to sync after max retries');
-                                    }
-                                  } catch (error) {
-                                    if (retryCount < maxRetries) {
-                                      retryCount++;
-                                      const delay = baseDelay * Math.pow(2, retryCount - 1);
-                                      console.log(`Sync error, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`, error);
-                                      setTimeout(attemptSync, delay);
-                                    } else {
-                                      console.error('Failed to sync after max retries:', error);
-                                    }
-                                  }
-                                };
-
-                                // Start after 1 second
-                                setTimeout(attemptSync, 1000);
-                              }
                             }
                           }}
                         >
