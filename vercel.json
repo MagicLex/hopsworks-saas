@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/check-data-integrity",
-      "schedule": "0 6 * * *"
+      "schedule": "0 6 * * 1"
     }
   ],
   "functions": {
