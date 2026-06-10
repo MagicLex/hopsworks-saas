@@ -197,51 +197,21 @@ export async function createHopsworksOAuthUser(
 }
 
 /**
- * Create a project for a user
- */
-export async function createHopsworksProject(
-  credentials: HopsworksCredentials,
-  username: string,
-  projectName: string
-): Promise<void> {
-  const response = await fetchWithTimeout(`${credentials.apiUrl}${HOPSWORKS_API_BASE}/admin/projects/createas`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `ApiKey ${credentials.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      owner: username,
-      projectName,
-      services: ['JOBS', 'HIVE', 'KAFKA', 'FEATURESTORE', 'SERVING']
-    }),
-    // @ts-ignore
-    agent: httpsAgent
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error(`[Hopsworks API] Project creation failed for ${projectName} (owner: ${username}) on ${credentials.apiUrl}: ${response.status} ${response.statusText}`, errorBody);
-
-    if (response.status === 409) {
-      throw new Error(`Project name already exists: ${projectName} (owner: ${username})`);
-    }
-    throw new Error(`Failed to create project ${projectName} on ${credentials.apiUrl}: ${response.statusText}`);
-  }
-}
-
-/**
- * Get user's projects (both owned and member of)
- * Fetches all projects and filters by user ID or username
+ * Get a user's active (owned) projects, filtered server-side.
  */
 export async function getUserProjects(
   credentials: HopsworksCredentials,
   username: string,
   userId?: number
 ): Promise<HopsworksProject[]> {
-  // Fetch all projects and filter by owner
+  if (!userId) {
+    // No upstream user ID means the user doesn't exist in Hopsworks: no owned projects.
+    console.warn(`[Hopsworks API] getUserProjects called without userId for ${username}, returning []`);
+    return [];
+  }
+
   const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/projects?expand=creator`,
+    `${credentials.apiUrl}${ADMIN_API_BASE}/projects?status=active&ownerId=${userId}&expand=creator`,
     {
       headers: {
         'Authorization': `ApiKey ${credentials.apiKey}`
@@ -256,25 +226,7 @@ export async function getUserProjects(
   }
 
   const data = await response.json();
-  const allProjects = data.items || [];
-
-  // Filter projects by creator - use expanded creator object
-  const userProjects = allProjects.filter((project: any) => {
-    if (project.creator) {
-      // Match by user ID if provided
-      if (userId && project.creator.id === userId) {
-        return true;
-      }
-      // Match by username
-      if (project.creator.username === username) {
-        return true;
-      }
-    }
-    // Fallback to old owner field if it exists (for backward compatibility)
-    return project.owner === username;
-  });
-
-  return userProjects;
+  return data.items || [];
 }
 
 /**
