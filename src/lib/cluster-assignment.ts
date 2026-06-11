@@ -152,14 +152,25 @@ export async function assignUserToCluster(
     // Get user details including account owner
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('stripe_customer_id, stripe_subscription_id, account_owner_id, email, name, hopsworks_user_id, hopsworks_username, billing_mode')
+      .select('stripe_customer_id, stripe_subscription_id, account_owner_id, email, name, hopsworks_user_id, hopsworks_username, billing_mode, metadata')
       .eq('id', userId)
       .single();
 
     if (!user) {
-      return { 
-        success: false, 
-        error: 'User not found' 
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+
+    // Defense in depth: hosting-ASN flagged signups don't get free-tier clusters.
+    // Card validation happens in start-free / accept-terms; admin manual assignment bypasses.
+    const userMeta = (user as any).metadata ?? {};
+    if (!isManualAssignment && !user.account_owner_id && user.billing_mode === 'free'
+        && userMeta.hosting_asn && !userMeta.hosting_asn_validated) {
+      return {
+        success: false,
+        error: 'payment_validation_required: hosting-provider signup without validated payment method'
       };
     }
 

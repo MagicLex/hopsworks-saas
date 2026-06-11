@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { requireActiveSession } from '@/lib/require-active-session';
 import { createClient } from '@supabase/supabase-js';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
+import { hostingSignupCanGoFree } from '../../../lib/asn-check';
 import { sendPlanUpdated, sendUserActivated } from '../../../lib/marketing-webhooks';
 
 const supabaseAdmin = createClient(
@@ -29,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Get current user state
     const { data: user, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, email, billing_mode, stripe_subscription_id, account_owner_id')
+      .select('id, email, billing_mode, stripe_subscription_id, stripe_customer_id, account_owner_id, metadata')
       .eq('id', userId)
       .single();
 
@@ -50,6 +51,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Only change from postpaid (or null) to free
     if (user.billing_mode === 'prepaid') {
       return res.status(400).json({ error: 'Prepaid users cannot switch to free' });
+    }
+
+    // Hosting-ASN signups must validate a payment method before free compute
+    const canGoFree = await hostingSignupCanGoFree(supabaseAdmin, userId, user);
+    if (!canGoFree) {
+      console.log(`[ASN check] Free tier blocked for ${user.email} (hosting ASN, no validated card)`);
+      return res.status(403).json({
+        error: 'Signups from datacenter networks need a payment method on file before using the free tier. Add a card (no charges) to continue.',
+        requiresPaymentValidation: true
+      });
     }
 
     // If already free, just ensure cluster is assigned

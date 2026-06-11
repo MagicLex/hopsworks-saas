@@ -68,6 +68,18 @@ The cluster posts user/project/membership events to `POST /api/webhooks/hopswork
 
 Rotate on both sides together; mismatched secrets surface as `401` from the receiver, retried by the cluster's outbox with exponential backoff (up to 24h).
 
+## Anti-abuse: hosting-ASN signups
+
+Mining farms sign up from datacenter IPs (the 2026-06 batch: one EC2 af-south-1 farm, 9 accounts) to farm free compute. At signup, `sync-user` resolves the registration IP's ASN via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open) and stores it in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers listed in `src/lib/asn-check.ts`).
+
+Policy: flagged accounts are NOT blocked. They cannot take the free tier until a card is on file (`start-free` / `accept-terms` return 403 `requiresPaymentValidation`; `assignUserToCluster` refuses as backstop). Once a card exists, `hosting_asn_validated: true` is persisted and the account behaves normally. Kills mining economics (they need anonymous free compute) without blocking corporate-VPN/CI signups.
+
+Operator notes:
+- Flagged accounts: `select email, metadata->>'registration_asn_org' from users where (metadata->>'hosting_asn')::bool;`
+- Manual override (vetted user): set `metadata.hosting_asn_validated = true`.
+- Admin manual cluster assignment bypasses the gate.
+- Confirmed abusers: `tsx scripts/block-abuse-users.ts <emails>` (Hopsworks status 4 BLOCKED + Supabase suspended).
+
 ## Environment-scoped cluster routing
 
 Staging and production share the same Supabase, so `hopsworks_clusters.environment` (`'production' | 'staging'`, default `'production'`) decides where a new signup lands. The filter is applied at:

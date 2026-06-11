@@ -3,6 +3,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
+import { checkRegistrationIp } from '../../../lib/asn-check';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
 
@@ -96,7 +97,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let billingMode = null;
       let metadata: any = {};
       let registrationSource = 'organic';
-      
+
+      // ASN check on registration IP: hosting-provider signups (EC2, Hetzner...)
+      // get flagged and must validate a payment method before free compute
+      const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+      const asnInfo = await checkRegistrationIp(registrationIp);
+      if (asnInfo) {
+        metadata.registration_asn = asnInfo.asn;
+        metadata.registration_asn_org = asnInfo.asnOrg;
+        if (asnInfo.hosting) {
+          metadata.hosting_asn = true;
+          console.log(`[ASN check] ${email} signed up from hosting ASN ${asnInfo.asn} (${asnInfo.asnOrg}) - flagged for payment validation`);
+        }
+      }
+
       // Handle corporate registration
       if (corporateRef) {
         try {
@@ -166,7 +180,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email,
           name: name || null, // Keep for backward compatibility
           registration_source: registrationSource,
-          registration_ip: req.headers['x-forwarded-for'] as string || req.socket.remoteAddress,
+          registration_ip: registrationIp,
           status: 'active',
           billing_mode: billingMode || null, // NULL until user chooses plan (prepaid set by corporate/promo)
           promo_code: normalizedPromoCode, // Store promo code in dedicated column
@@ -190,7 +204,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email,
           name: actualName,
           source: registrationSource,
-          ip: req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || null
+          ip: registrationIp || null
         }).catch(err => console.error('[Marketing] Registration webhook failed:', err));
 
         // For prepaid users (corporate/promo), also fire plan.updated since plan is known at registration
