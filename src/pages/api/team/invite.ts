@@ -80,11 +80,12 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Existing accounts CAN be invited (they log in and accept instead of
-      // signing up). Block only the cases where joining would be wrong:
-      // already on a team, their own paid account, or self.
+      // signing up). If they have their own billing, the join flow asks for
+      // consent and cancels their subscription at accept time. Only block
+      // what can never work: self and people already on a team.
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id, account_owner_id, billing_mode, stripe_subscription_id')
+        .select('id, account_owner_id')
         .eq('email', normalizedEmail)
         .single();
 
@@ -95,12 +96,6 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
         if (existingUser.account_owner_id) {
           return res.status(400).json({ error: 'This person is already a member of a team' });
         }
-        if (existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid') {
-          return res.status(400).json({
-            error: 'This person has their own paid Hopsworks account. They must close it before joining your team.'
-          });
-        }
-        // Standalone account with no paid billing → fine to invite.
       }
 
       // Check if there's already a pending invite

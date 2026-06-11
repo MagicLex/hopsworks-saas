@@ -625,7 +625,7 @@ export default function Dashboard() {
                           <div className="mt-3 pt-3 border-t border-border">
                             {hopsworksInfo?.projects && hopsworksInfo.projects.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5">
-                                {hopsworksInfo.projects.slice(0, 3).map(project => (
+                                {hopsworksInfo.projects.map(project => (
                                   <a
                                     key={project.id}
                                     href={`${instance?.endpoint || hopsworksInfo?.clusterEndpoint || ''}/p/${project.id}`}
@@ -638,11 +638,6 @@ export default function Dashboard() {
                                     <ExternalLink size={12} />
                                   </a>
                                 ))}
-                                {hopsworksInfo.projects.length > 3 && (
-                                  <span className="inline-flex items-center px-3 py-1.5 bg-muted text-muted-foreground rounded-full text-sm">
-                                    +{hopsworksInfo.projects.length - 3} more
-                                  </span>
-                                )}
                               </div>
                             ) : (
                               <p className="text-xs text-muted-foreground">No projects yet</p>

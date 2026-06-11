@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session) return;
 
   try {
-    const { token, termsAccepted, marketingConsent } = req.body;
+    const { token, termsAccepted, marketingConsent, billingConsent } = req.body;
     const userId = session.user.sub;
     const userEmail = session.user.email;
 
@@ -71,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Check if user is already part of a team
     const { data: existingUser } = await supabase
       .from('users')
-      .select('id, account_owner_id')
+      .select('id, account_owner_id, billing_mode, stripe_subscription_id')
       .eq('id', userId)
       .single();
 
@@ -82,6 +82,66 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .update({ accepted_at: null, accepted_by_user_id: null })
         .eq('id', invite.id);
       return res.status(400).json({ error: 'You are already part of a team' });
+    }
+
+    // Cluster mismatch guard: a team lives on the owner's cluster. An existing
+    // account already assigned elsewhere cannot be converted (its Hopsworks
+    // user ID is cluster-local).
+    if (existingUser) {
+      const [{ data: memberAssignment }, { data: ownerClusterAssignment }] = await Promise.all([
+        supabase.from('user_hopsworks_assignments').select('hopsworks_cluster_id').eq('user_id', userId).single(),
+        supabase.from('user_hopsworks_assignments').select('hopsworks_cluster_id').eq('user_id', invite.account_owner_id).single()
+      ]);
+      if (memberAssignment && ownerClusterAssignment
+          && memberAssignment.hopsworks_cluster_id !== ownerClusterAssignment.hopsworks_cluster_id) {
+        await supabase
+          .from('team_invites')
+          .update({ accepted_at: null, accepted_by_user_id: null })
+          .eq('id', invite.id);
+        return res.status(409).json({ error: 'Your account is on a different cluster than this team. Contact support@hopsworks.ai.' });
+      }
+    }
+
+    // Billing handoff: an existing account with its own billing needs explicit
+    // consent — their subscription is cancelled and future usage bills to the
+    // team owner.
+    const hasOwnBilling = !!existingUser
+      && (!!existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid');
+
+    if (hasOwnBilling && !billingConsent) {
+      // Unclaim so the invite survives the consent round-trip
+      await supabase
+        .from('team_invites')
+        .update({ accepted_at: null, accepted_by_user_id: null })
+        .eq('id', invite.id);
+      return res.status(409).json({
+        billingConsentRequired: true,
+        billingType: existingUser.stripe_subscription_id ? 'subscription' : 'prepaid',
+        error: existingUser.stripe_subscription_id
+          ? 'Joining this team will cancel your personal subscription. Your future usage will be billed to the team owner.'
+          : 'Joining this team ends your current plan. Your future usage will be billed to the team owner.'
+      });
+    }
+
+    if (hasOwnBilling && existingUser.stripe_subscription_id) {
+      // Cancel their personal subscription BEFORE converting; never leave a
+      // team member with a live subscription.
+      try {
+        const Stripe = (await import('stripe')).default;
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-06-30.basil' });
+        await stripe.subscriptions.cancel(existingUser.stripe_subscription_id);
+        console.log(`[Team join] Cancelled subscription ${existingUser.stripe_subscription_id} for ${userEmail} (joining team ${invite.account_owner_id})`);
+      } catch (e: any) {
+        // Already-cancelled subscriptions are fine; anything else aborts the join
+        if (e?.code !== 'resource_missing' && !`${e?.message}`.includes('canceled')) {
+          console.error(`[Team join] Failed to cancel subscription for ${userEmail}:`, e);
+          await supabase
+            .from('team_invites')
+            .update({ accepted_at: null, accepted_by_user_id: null })
+            .eq('id', invite.id);
+          return res.status(502).json({ error: 'Could not cancel your existing subscription. Try again or contact support@hopsworks.ai.' });
+        }
+      }
     }
 
     // Upsert user - either create new or update existing
@@ -97,6 +157,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Legal consent
         terms_accepted_at: termsAccepted ? new Date().toISOString() : null,
         marketing_consent: marketingConsent || false,
+        // Converted accounts shed their own billing: team members inherit the
+        // owner's. (stripe_customer_id is kept for a potential later split.)
+        ...(existingUser && {
+          billing_mode: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          downgrade_deadline: null
+        }),
         // Only set these on insert, not update
         ...(!existingUser && {
           login_count: 1,
@@ -153,6 +221,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!clusterAssignment.success) {
       console.log('Failed to assign team member to cluster:', clusterAssignment.error);
       // Don't fail the join operation, they can be assigned later
+    }
+
+    // Converted ex-owners: drop their project quota to the team-member baseline (0).
+    // The ratchet's "only bump up" guard never lowers it, so set it explicitly —
+    // a team member must not create projects billed to the owner.
+    if (existingUser) {
+      try {
+        const { data: memberAssignment } = await supabase
+          .from('user_hopsworks_assignments')
+          .select('hopsworks_user_id, hopsworks_clusters!inner(api_url, api_key)')
+          .eq('user_id', userId)
+          .single();
+        const memberCluster = (memberAssignment as any)?.hopsworks_clusters;
+        if (memberAssignment?.hopsworks_user_id && memberCluster) {
+          const { updateUserProjectLimit } = await import('@/lib/hopsworks-api');
+          await updateUserProjectLimit(
+            { apiUrl: memberCluster.api_url, apiKey: memberCluster.api_key },
+            memberAssignment.hopsworks_user_id,
+            0
+          );
+          console.log(`[Team join] Set maxNumProjects=0 for converted member ${userEmail}`);
+        }
+      } catch (e) {
+        console.error(`[Team join] Failed to set maxNumProjects=0 for ${userEmail}:`, e);
+        // Best-effort: log only, the member is already converted
+      }
     }
 
     // If auto_assign_projects is true and we have a cluster, add to owner's projects

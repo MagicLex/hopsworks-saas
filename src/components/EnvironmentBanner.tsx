@@ -1,5 +1,5 @@
 /**
- * Production: subtle migration notice with contact link.
+ * Production: 5.0 upgrade notice with contact link.
  * Non-production (staging/preview): loud warning — shared prod DB, writes hit real users.
  */
 export function EnvironmentBanner() {
@@ -7,8 +7,8 @@ export function EnvironmentBanner() {
 
   if (env === 'production' || !env) {
     return (
-      <div className="sticky top-0 z-50 w-full bg-quartz-gray-shade3 px-4 py-1 text-center text-xs font-mono text-quartz-gray-shade1">
-        Possible disturbance with the SaaS bridge while we migrate test clusters to 5.0. Issues?{' '}
+      <div className="sticky top-0 z-50 w-full bg-quartz-label-orange-shade2 px-4 py-1 text-center text-xs font-mono text-quartz-label-orange">
+        We are upgrading the main cluster to Hopsworks 5.0. You may experience temporary disturbances. Issues?{' '}
         <a
           href="https://www.hopsworks.ai/contact/main"
           target="_blank"
