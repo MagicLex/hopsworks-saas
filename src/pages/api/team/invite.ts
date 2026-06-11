@@ -26,7 +26,17 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
 
   if (req.method === 'POST') {
     try {
-      const { email, projectRole, autoAssignProjects = true } = req.body;
+      const { email, projectRole, autoAssignProjects = true, projectIds } = req.body;
+
+      // projectIds: explicit subset of owner projects, or null/undefined for
+      // "all projects" (when autoAssignProjects). Reject non-string-array input.
+      let selectedProjectIds: string[] | null = null;
+      if (projectIds != null) {
+        if (!Array.isArray(projectIds) || projectIds.some((id) => typeof id !== 'string')) {
+          return res.status(400).json({ error: 'projectIds must be an array of project ID strings' });
+        }
+        selectedProjectIds = projectIds;
+      }
 
       // Validate request payload
       const validation = validateInviteRequest({ email, projectRole });
@@ -69,15 +79,23 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
         });
       }
 
-      // Check if email is already a user
+      // Existing accounts CAN be invited (they log in and accept instead of
+      // signing up). If they have their own billing, the join flow asks for
+      // consent and cancels their subscription at accept time. Only block
+      // what can never work: self and people already on a team.
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id')
+        .select('id, account_owner_id')
         .eq('email', normalizedEmail)
         .single();
 
       if (existingUser) {
-        return res.status(400).json({ error: 'User already exists with this email' });
+        if (existingUser.id === userId) {
+          return res.status(400).json({ error: 'You cannot invite yourself' });
+        }
+        if (existingUser.account_owner_id) {
+          return res.status(400).json({ error: 'This person is already a member of a team' });
+        }
       }
 
       // Check if there's already a pending invite
@@ -106,6 +124,7 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
           token_hash: tokenHash,
           project_role: role,
           auto_assign_projects: autoAssignProjects,
+          project_ids: selectedProjectIds,
           expires_at: calculateInviteExpiry().toISOString()
         })
         .select()

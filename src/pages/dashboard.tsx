@@ -193,6 +193,8 @@ export default function Dashboard() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('Data scientist');
   const [autoAssignProjects, setAutoAssignProjects] = useState(true);
+  const [ownerProjects, setOwnerProjects] = useState<{ id: number; name: string }[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [invites, setInvites] = useState<TeamInvite[]>([]);
@@ -409,7 +411,10 @@ export default function Dashboard() {
         body: JSON.stringify({
           email: inviteEmail,
           projectRole: inviteRole,
-          autoAssignProjects
+          // "all" → assign all current + future projects (projectIds null).
+          // specific → assign only the picked subset.
+          autoAssignProjects: autoAssignProjects || selectedProjectIds.length > 0,
+          projectIds: autoAssignProjects ? null : selectedProjectIds
         })
       });
 
@@ -424,6 +429,7 @@ export default function Dashboard() {
       setInviteEmail('');
       setInviteRole('Data scientist');
       setAutoAssignProjects(true);
+      setSelectedProjectIds([]);
     } catch (error: any) {
       setInviteError(error.message);
     } finally {
@@ -434,6 +440,30 @@ export default function Dashboard() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [removingMember, setRemovingMember] = useState(false);
+  const [removingMemberProject, setRemovingMemberProject] = useState<{ memberId: string; projectName: string } | null>(null);
+
+  const handleRemoveMemberProject = async (memberId: string, memberEmail: string, projectName: string) => {
+    if (!confirm(`Remove ${memberEmail} from project ${projectName}?`)) return;
+
+    setRemovingMemberProject({ memberId, projectName });
+    try {
+      const response = await fetch('/api/team/member-projects', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, projectName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to remove from project');
+
+      toast.success(`${memberEmail} removed from ${projectName}`);
+      await refetchTeamData();
+    } catch (error: any) {
+      console.error('Failed to remove member from project:', error);
+      toast.error(error.message || 'Failed to remove from project');
+    } finally {
+      setRemovingMemberProject(null);
+    }
+  };
 
   const handleRemoveMember = async (memberId: string) => {
     setRemovingMemberId(memberId);
@@ -619,7 +649,7 @@ export default function Dashboard() {
                           <div className="mt-3 pt-3 border-t border-border">
                             {hopsworksInfo?.projects && hopsworksInfo.projects.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5">
-                                {hopsworksInfo.projects.slice(0, 3).map(project => (
+                                {hopsworksInfo.projects.map(project => (
                                   <a
                                     key={project.id}
                                     href={`${instance?.endpoint || hopsworksInfo?.clusterEndpoint || ''}/p/${project.id}`}
@@ -632,11 +662,6 @@ export default function Dashboard() {
                                     <ExternalLink size={12} />
                                   </a>
                                 ))}
-                                {hopsworksInfo.projects.length > 3 && (
-                                  <span className="inline-flex items-center px-3 py-1.5 bg-muted text-muted-foreground rounded-full text-sm">
-                                    +{hopsworksInfo.projects.length - 3} more
-                                  </span>
-                                )}
                               </div>
                             ) : (
                               <p className="text-xs text-muted-foreground">No projects yet</p>
@@ -994,13 +1019,15 @@ mr = project.get_model_registry()`;
                                   </Button>
                                 </div>
                               </div>
-                              <div className="mt-4">
+                              <div className="mt-3">
                                 <TeamMemberProjects
                                   memberId={member.id}
                                   memberEmail={member.email}
                                   memberName={member.name || member.email}
                                   hopsworksUsername={member.hopsworks_username}
                                   projects={member.project_member_roles}
+                                  onRemoveProject={(projectName) => handleRemoveMemberProject(member.id, member.email, projectName)}
+                                  removingProject={removingMemberProject?.memberId === member.id ? removingMemberProject.projectName : null}
                                 />
                               </div>
                             </div>
@@ -1009,7 +1036,13 @@ mr = project.get_model_registry()`;
                       </div>
 
                       <div className="mt-4">
-                        <Button onClick={() => setShowInviteModal(true)}>
+                        <Button onClick={() => {
+                          setShowInviteModal(true);
+                          fetch('/api/team/owner-projects')
+                            .then(r => r.ok ? r.json() : { projects: [] })
+                            .then(d => setOwnerProjects(d.projects || []))
+                            .catch(() => setOwnerProjects([]));
+                        }}>
                           Invite Member
                         </Button>
                       </div>
@@ -1703,6 +1736,7 @@ mr = project.get_model_registry()`;
             setInviteEmail('');
             setInviteRole('Data scientist');
             setAutoAssignProjects(true);
+            setSelectedProjectIds([]);
             setInviteError('');
           }
         }}
@@ -1753,16 +1787,55 @@ mr = project.get_model_registry()`;
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="auto-assign-projects"
-                checked={autoAssignProjects}
-                onCheckedChange={(checked) => setAutoAssignProjects(checked === true)}
-                disabled={inviteLoading}
-              />
-              <Label htmlFor="auto-assign-projects" className="text-sm">
-                Automatically add to all my existing projects
-              </Label>
+            <div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="auto-assign-projects"
+                  checked={autoAssignProjects}
+                  onCheckedChange={(checked) => {
+                    const all = checked === true;
+                    setAutoAssignProjects(all);
+                    if (all) setSelectedProjectIds([]);
+                  }}
+                  disabled={inviteLoading}
+                />
+                <Label htmlFor="auto-assign-projects" className="text-sm">
+                  Add to all my projects
+                </Label>
+              </div>
+
+              {!autoAssignProjects && (
+                <div className="mt-3 pl-1">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {ownerProjects.length === 0
+                      ? 'No projects yet. The member will join the team without project access.'
+                      : 'Pick the projects they should join:'}
+                  </p>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {ownerProjects.map((p) => {
+                      const id = String(p.id);
+                      const checked = selectedProjectIds.includes(id);
+                      return (
+                        <div key={id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`invite-project-${id}`}
+                            checked={checked}
+                            onCheckedChange={(c) =>
+                              setSelectedProjectIds((prev) =>
+                                c === true ? [...prev, id] : prev.filter((x) => x !== id)
+                              )
+                            }
+                            disabled={inviteLoading}
+                          />
+                          <Label htmlFor={`invite-project-${id}`} className="text-sm font-normal">
+                            {p.name}
+                          </Label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3">
@@ -1773,6 +1846,7 @@ mr = project.get_model_registry()`;
                   setInviteEmail('');
                   setInviteRole('Data scientist');
                   setAutoAssignProjects(true);
+                  setSelectedProjectIds([]);
                   setInviteError('');
                 }}
                 disabled={inviteLoading}
@@ -1811,24 +1885,12 @@ mr = project.get_model_registry()`;
               icon={<AlertTriangle size={20} className="text-quartz-label-orange flex-shrink-0 mt-0.5" />}
             >
               <p className="text-sm font-medium mb-2">
-                Manual action required in Hopsworks
+                This removes their access immediately
               </p>
               <p className="text-sm">
-                This will remove the team member from your SaaS account, but you must manually remove them from your Hopsworks projects.
+                The member is suspended and removed from all your Hopsworks projects.
               </p>
             </StatusBox>
-
-            <div>
-              <p className="text-sm text-foreground mb-2">
-                After removing this member:
-              </p>
-              <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
-                <li>Go to your Hopsworks cluster</li>
-                <li>Open each project they have access to</li>
-                <li>Navigate to Settings &rarr; Members</li>
-                <li>Remove the user from the project</li>
-              </ol>
-            </div>
 
             <p className="text-sm text-muted-foreground">
               The user will be converted to a standalone account and can create their own billing.

@@ -85,8 +85,8 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     <div className="relative">
       {deployment.isRecommended && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-          <Badge className="bg-primary text-primary-foreground px-4 py-1 font-mono font-semibold uppercase">
-            RECOMMENDED
+          <Badge className="bg-primary text-primary-foreground px-4 py-1 font-mono font-semibold">
+            Recommended
           </Badge>
         </div>
       )}
