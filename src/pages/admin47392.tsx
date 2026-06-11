@@ -186,6 +186,41 @@ export default function AdminPage() {
     }
   };
 
+  const attachToTeam = async (userId: string, email: string) => {
+    const ownerEmail = prompt(`Attach ${email} to a team.\n\nAccount owner's email:`);
+    if (!ownerEmail) return;
+    const addToAllProjects = confirm('Add them to all the owner\'s projects as Data scientist?\n\nOK = all projects · Cancel = team only');
+
+    setActionLoading(prev => ({ ...prev, [userId]: true }));
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/attach-team-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberEmail: email, ownerEmail, addToAllProjects })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success(
+          `${email} attached to ${ownerEmail}'s team${data.projectsAssigned?.length ? ` (projects: ${data.projectsAssigned.join(', ')})` : ''}`,
+        );
+        if (data.projectErrors) {
+          toast.error(`Some projects failed: ${data.projectErrors.join('; ')}`);
+        }
+        fetchUsers();
+      } else {
+        setError(`Failed to attach to team: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to attach to team:', error);
+      setError('Failed to attach to team');
+    } finally {
+      setActionLoading(prev => ({ ...prev, [userId]: false }));
+    }
+  };
+
   const reactivateUser = async (userId: string, email: string) => {
     if (!confirm(`Reactivate user ${email}?`)) return;
 
@@ -623,6 +658,16 @@ export default function AdminPage() {
                                     >
                                       {actionLoading[user.id] ? 'Loading...' : 'Suspend'}
                                     </Button>
+                                    {!user.account_owner_id && (
+                                      <Button
+                                        onClick={() => attachToTeam(user.id, user.email)}
+                                        disabled={actionLoading[user.id]}
+                                        variant="secondary"
+                                        size="sm"
+                                      >
+                                        Attach to team
+                                      </Button>
+                                    )}
                                     {!user.account_owner_id && (
                                       <Button
                                         onClick={() => openMetadataModal(user)}

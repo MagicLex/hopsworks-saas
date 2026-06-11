@@ -80,6 +80,34 @@ export async function addUserToProject(
   console.log(`Successfully added ${username} to ${projectName} as ${role}`);
 }
 
+/**
+ * Remove a member from a project.
+ * Uses DELETE /project/{projectId}/projectMembers/{email} — the project-scoped
+ * endpoint accepts the admin API key (verified against prod 2026-06-11).
+ * Idempotent: 404 (not a member) is treated as success.
+ */
+export async function removeUserFromProject(
+  credentials: HopsworksCredentials,
+  projectId: number,
+  memberEmail: string
+): Promise<void> {
+  const response = await fetch(
+    `${credentials.apiUrl}${HOPSWORKS_API_BASE}/project/${projectId}/projectMembers/${encodeURIComponent(memberEmail)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `ApiKey ${credentials.apiKey}`
+      }
+    }
+  );
+
+  if (!response.ok && response.status !== 404) {
+    const errorText = await response.text();
+    throw new Error(`Failed to remove ${memberEmail} from project ${projectId}: ${response.statusText} - ${errorText}`);
+  }
+  console.log(`Removed ${memberEmail} from project ${projectId}`);
+}
+
 // createGroupMapping removed - use addUserToProject which uses admin endpoint
 
 /**

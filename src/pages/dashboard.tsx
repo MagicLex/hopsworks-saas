@@ -1859,24 +1859,12 @@ mr = project.get_model_registry()`;
               icon={<AlertTriangle size={20} className="text-quartz-label-orange flex-shrink-0 mt-0.5" />}
             >
               <p className="text-sm font-medium mb-2">
-                Manual action required in Hopsworks
+                This removes their access immediately
               </p>
               <p className="text-sm">
-                This will remove the team member from your SaaS account, but you must manually remove them from your Hopsworks projects.
+                The member is suspended and removed from all your Hopsworks projects.
               </p>
             </StatusBox>
-
-            <div>
-              <p className="text-sm text-foreground mb-2">
-                After removing this member:
-              </p>
-              <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
-                <li>Go to your Hopsworks cluster</li>
-                <li>Open each project they have access to</li>
-                <li>Navigate to Settings &rarr; Members</li>
-                <li>Remove the user from the project</li>
-              </ol>
-            </div>
 
             <p className="text-sm text-muted-foreground">
               The user will be converted to a standalone account and can create their own billing.
