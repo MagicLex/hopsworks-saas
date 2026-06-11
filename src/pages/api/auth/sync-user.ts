@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
 import { checkRegistrationIp } from '../../../lib/asn-check';
+import { checkSignupAbuse } from '../../../lib/signup-abuse';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
 
@@ -98,9 +99,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let metadata: any = {};
       let registrationSource = 'organic';
 
+      const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+
+      // Signup abuse gates: disposable email, abuse-suspended IP reuse,
+      // per-IP velocity. These fire BEFORE account creation.
+      const blockReason = await checkSignupAbuse(supabaseAdmin, email, registrationIp, !!teamInviteToken);
+      if (blockReason) {
+        console.warn(`[Signup abuse] Blocked signup for ${email} from ${registrationIp}: ${blockReason}`);
+        return res.status(403).json({
+          error: 'Signup is not available for this email or network. Contact support@hopsworks.ai if you believe this is an error.'
+        });
+      }
+
       // ASN check on registration IP: hosting-provider signups (EC2, Hetzner...)
       // get flagged and must validate a payment method before free compute
-      const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
       const asnInfo = await checkRegistrationIp(registrationIp);
       if (asnInfo) {
         metadata.registration_asn = asnInfo.asn;

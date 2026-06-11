@@ -64,9 +64,9 @@ async function blockOne(email: string): Promise<Outcome> {
 
   const { data: user, error: userErr } = await supabase
     .from('users')
-    .select('id, email, status, account_owner_id')
+    .select('id, email, status, account_owner_id, metadata')
     .eq('email', email)
-    .single() as { data: { id: string; email: string; status: string; account_owner_id: string | null } | null; error: any };
+    .single() as { data: { id: string; email: string; status: string; account_owner_id: string | null; metadata: Record<string, unknown> | null } | null; error: any };
 
   if (userErr || !user) {
     out.error = `user not found in supabase (${userErr?.message || 'no row'})`;
@@ -91,15 +91,19 @@ async function blockOne(email: string): Promise<Outcome> {
     return out;
   }
 
-  if (user.status !== 'suspended') {
-    const { error: updErr } = await supabase
-      .from('users')
-      .update({ status: 'suspended' })
-      .eq('id', user.id);
-    if (updErr) {
-      out.error = `supabase update failed: ${updErr.message}`;
-      return out;
-    }
+  // Always (re)write status + suspension_reason: the reason is what the
+  // signup-time IP-reuse check matches on, so re-running this script
+  // backfills accounts suspended before the reason was persisted.
+  const { error: updErr } = await supabase
+    .from('users')
+    .update({
+      status: 'suspended',
+      metadata: { ...(user.metadata ?? {}), suspension_reason: REASON }
+    })
+    .eq('id', user.id);
+  if (updErr) {
+    out.error = `supabase update failed: ${updErr.message}`;
+    return out;
   }
   out.supabaseAfter = 'suspended';
 

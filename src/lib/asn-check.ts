@@ -52,7 +52,7 @@ export function firstIp(ipHeader: string | undefined | null): string | null {
   return ip || null;
 }
 
-function isPrivateOrLocal(ip: string): boolean {
+export function isPrivateOrLocal(ip: string): boolean {
   return (
     ip === '::1' ||
     ip.startsWith('127.') ||

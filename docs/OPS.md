@@ -68,17 +68,22 @@ The cluster posts user/project/membership events to `POST /api/webhooks/hopswork
 
 Rotate on both sides together; mismatched secrets surface as `401` from the receiver, retried by the cluster's outbox with exponential backoff (up to 24h).
 
-## Anti-abuse: hosting-ASN signups
+## Anti-abuse: signup gates
 
-Mining farms sign up from datacenter IPs (the 2026-06 batch: one EC2 af-south-1 farm, 9 accounts) to farm free compute. At signup, `sync-user` resolves the registration IP's ASN via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open) and stores it in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers listed in `src/lib/asn-check.ts`).
+Mining farms sign up from datacenter IPs with throwaway emails (the 2026-06 batch: one EC2 af-south-1 farm, 9 accounts) to farm free compute. Four gates, all in the signup path:
 
-Policy: flagged accounts are NOT blocked. They cannot take the free tier until a card is on file (`start-free` / `accept-terms` return 403 `requiresPaymentValidation`; `assignUserToCluster` refuses as backstop). Once a card exists, `hosting_asn_validated: true` is persisted and the account behaves normally. Kills mining economics (they need anonymous free compute) without blocking corporate-VPN/CI signups.
+**Hard blocks before account creation** (`src/lib/signup-abuse.ts`, called by `sync-user`; 403, no `users` row created, stolen cards don't help):
+1. Disposable email domain — `disposable-email-domains` package (~120k domains) + local extras + `EXTRA_BLOCKED_EMAIL_DOMAINS` env (comma-separated, no deploy needed).
+2. IP reuse — signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
+3. Per-IP velocity — third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
+
+**Soft flag after creation** (`src/lib/asn-check.ts`): registration IP's ASN resolved via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open), stored in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers). Flagged accounts are NOT blocked: they cannot take the free tier until a card is on file (`start-free` / `accept-terms` return 403 `requiresPaymentValidation`; `assignUserToCluster` refuses as backstop). Once a card exists, `hosting_asn_validated: true` is persisted.
 
 Operator notes:
+- Blocked signups: grep Vercel logs for `[Signup abuse]`.
 - Flagged accounts: `select email, metadata->>'registration_asn_org' from users where (metadata->>'hosting_asn')::bool;`
-- Manual override (vetted user): set `metadata.hosting_asn_validated = true`.
-- Admin manual cluster assignment bypasses the gate.
-- Confirmed abusers: `tsx scripts/block-abuse-users.ts <emails>` (Hopsworks status 4 BLOCKED + Supabase suspended).
+- Manual override (vetted user): set `metadata.hosting_asn_validated = true`. Admin manual cluster assignment bypasses the gate.
+- Confirmed abusers: `tsx scripts/block-abuse-users.ts <emails>` (Hopsworks status 4 BLOCKED + Supabase suspended + `suspension_reason='abuse'`, which arms gate 2 for their IP). Re-run it on previously blocked accounts to backfill the reason.
 
 ## Environment-scoped cluster routing
 
