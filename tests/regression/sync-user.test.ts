@@ -51,8 +51,8 @@ describe('health check patterns in sync-user', () => {
     // Should calculate expected maxNumProjects
     expect(source).toContain('expectedMaxProjects');
 
-    // Should compare current vs expected
-    expect(source).toContain('currentMaxProjects !== expectedMaxProjects');
+    // Should compare current vs expected (ratchet: only bump up)
+    expect(source).toContain('currentMaxProjects < expectedMaxProjects');
 
     // Should fix if different
     expect(source).toContain('updateUserProjectLimit');
