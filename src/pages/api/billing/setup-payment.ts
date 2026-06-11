@@ -130,24 +130,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   .single();
 
                 if (cluster) {
-                  // Only bump UP - quota workaround may have set it higher than 5
-                  const { getHopsworksUserById } = await import('../../../lib/hopsworks-api');
-                  const hwUser = await getHopsworksUserById(
+                  await updateUserProjectLimit(
                     { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-                    assignment.hopsworks_user_id
+                    assignment.hopsworks_user_id,
+                    5
                   );
-                  if (hwUser && (hwUser.maxNumProjects ?? 0) < 5) {
-                    await updateUserProjectLimit(
-                      { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-                      assignment.hopsworks_user_id,
-                      5
-                    );
-                  }
                 }
               }
             } catch (e) {
               console.error('Failed to update maxNumProjects:', e);
-              // Log to health_check_failures - sync-user will fix on next login
+              // Log to health_check_failures - next billing event re-pushes the baseline
               try {
                 await supabaseAdmin.from('health_check_failures').insert({
                   user_id: userId,

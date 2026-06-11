@@ -22,7 +22,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     // First, let's check if the cluster exists
     const { data: cluster, error: fetchError } = await supabase
       .from('hopsworks_clusters')
-      .select('*')
+      .select('id')
       .eq('id', clusterId)
       .single();
 
@@ -30,23 +30,20 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ error: 'Cluster not found' });
     }
 
-    // Update the cluster with the kubeconfig
+    // Update the cluster with the kubeconfig. Never echo secrets back.
     const { data, error } = await supabase
       .from('hopsworks_clusters')
       .update({ kubeconfig })
       .eq('id', clusterId)
-      .select()
+      .select('id, name')
       .single();
 
     if (error) {
       console.error('Error updating kubeconfig:', error);
-      return res.status(500).json({ 
-        error: 'Failed to update kubeconfig',
-        details: error.message
-      });
+      return res.status(500).json({ error: 'Failed to update kubeconfig' });
     }
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
       cluster: data,
       message: 'Kubeconfig updated successfully'
@@ -54,10 +51,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
 
   } catch (error) {
     console.error('Error updating kubeconfig:', error);
-    return res.status(500).json({ 
-      error: 'Failed to update kubeconfig',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    return res.status(500).json({ error: 'Failed to update kubeconfig' });
   }
 }
 

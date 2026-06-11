@@ -451,9 +451,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })
         .eq('id', userId);
         
-      // NOTE: Main Hopsworks sync is handled above in Health Check 3.
-      // This secondary block is now redundant and has been removed to avoid duplication.
-      
       // Auto-resolve stale health check failures for checks that now pass
       const resolvedTypes: string[] = [];
       if (healthCheckResults.billingEnabled) {

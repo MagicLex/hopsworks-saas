@@ -181,6 +181,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Check if customer has payment methods and get details
     let hasPaymentMethod = false;
+    let stripeCheckFailed = false;
     let paymentMethodDetails = null;
     console.log('[Billing API] Checking payment methods for customer:', user?.stripe_customer_id);
     if (user?.stripe_customer_id) {
@@ -253,6 +254,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } catch (error: any) {
         console.error('[Billing API] Error checking payment methods:', error?.message || error);
         hasPaymentMethod = false;
+        stripeCheckFailed = true;
       }
     } else {
       console.log('[Billing API] No stripe_customer_id, skipping payment check');
@@ -312,7 +314,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         } catch (upgradeError) {
           console.error(`[Billing API] Failed to update maxNumProjects:`, upgradeError);
-          // Log to health_check_failures for tracking - sync-user will fix on next login
+          // Log to health_check_failures for tracking - next billing event re-pushes the baseline
           try {
             await supabaseAdmin.from('health_check_failures').insert({
               user_id: userId,
@@ -346,14 +348,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.log(`[Billing API] Subscription check: hasActive=${hasActiveSubscription}, count=${subs.data.length}, ids=${subs.data.map(s => s.id).join(',')}`);
       } catch (e) {
         console.error('[Billing API] Failed to check Stripe subscription:', e);
+        stripeCheckFailed = true;
       }
 
-      // Downgrade if no payment method OR no active subscription
-      if (!hasPaymentMethod || !hasActiveSubscription) {
+      // Downgrade if no payment method OR no active subscription.
+      // Never downgrade on a failed Stripe check: "Stripe said no" and
+      // "Stripe unreachable" are different things.
+      if (!stripeCheckFailed && (!hasPaymentMethod || !hasActiveSubscription)) {
         const reason = !hasPaymentMethod ? 'no payment method' : 'no active subscription';
         console.log(`[Billing API] Lazy downgrading user ${userId} from postpaid to free (${reason})`);
 
-        // Sync projects before counting — user_projects may be stale (last synced at login)
+        // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
         try {
           const syncResult = await syncUserProjects(userId);
           if (!syncResult.success) {
@@ -451,7 +456,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (user?.billing_mode === 'free' && user?.downgrade_deadline && user?.status !== 'suspended') {
       const deadline = new Date(user.downgrade_deadline);
       if (deadline < new Date()) {
-        // Sync projects before counting — user_projects may be stale (last synced at login)
+        // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
         try {
           const syncResult = await syncUserProjects(userId);
           if (!syncResult.success) {

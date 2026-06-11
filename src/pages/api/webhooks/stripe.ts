@@ -372,7 +372,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     }
 
     // Downgrade to free tier instead of suspending
-    // Sync projects before counting — user_projects may be stale (last synced at login)
+    // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
     try {
       const syncResult = await syncUserProjects(user.id);
       if (!syncResult.success) {
@@ -546,7 +546,7 @@ async function handlePaymentMethodDetached(paymentMethod: Stripe.PaymentMethod, 
         if (paymentMethods.data.length === 0) {
           console.log(`User ${user.id} lost last payment method - downgrading to free tier`);
 
-          // Sync projects before counting — user_projects may be stale (last synced at login)
+          // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
           try {
             const syncResult = await syncUserProjects(user.id);
             if (!syncResult.success) {
