@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireActiveSession } from '@/lib/require-active-session';
 import { createClient } from '@supabase/supabase-js';
+import { removeUserFromProject } from '@/lib/hopsworks-team';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,10 +25,81 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(403).json({ error: 'Only account owners can manage team projects' });
   }
 
-  if (req.method === 'GET') {
+  if (req.method === 'DELETE') {
+    const { memberId, projectName } = req.body;
+
+    if (!memberId || typeof memberId !== 'string' || !projectName || typeof projectName !== 'string') {
+      return res.status(400).json({ error: 'memberId and projectName are required' });
+    }
+
+    try {
+      // Verify the member belongs to this owner's team
+      const { data: member } = await supabaseAdmin
+        .from('users')
+        .select('id, email, account_owner_id')
+        .eq('id', memberId)
+        .single();
+
+      if (!member || member.account_owner_id !== userId) {
+        return res.status(404).json({ error: 'Member not in your team' });
+      }
+
+      const { data: memberRole } = await supabaseAdmin
+        .from('project_member_roles')
+        .select('id, project_id, synced_to_hopsworks')
+        .eq('member_id', memberId)
+        .eq('project_name', projectName)
+        .eq('account_owner_id', userId)
+        .single();
+
+      if (!memberRole) {
+        return res.status(404).json({ error: `${member.email} has no access to ${projectName}` });
+      }
+
+      // Hopsworks first, DB second: a failed upstream removal must not leave
+      // a silent desync where the chip disappears but access remains.
+      // Never-synced rows have nothing to remove upstream.
+      if (memberRole.synced_to_hopsworks) {
+        const { data: ownerAssignment } = await supabaseAdmin
+          .from('user_hopsworks_assignments')
+          .select('hopsworks_clusters!inner(api_url, api_key)')
+          .eq('user_id', userId)
+          .single();
+        const cluster = (ownerAssignment as any)?.hopsworks_clusters;
+
+        if (!cluster) {
+          return res.status(400).json({ error: 'No cluster assignment found' });
+        }
+
+        await removeUserFromProject(
+          { apiUrl: cluster.api_url, apiKey: cluster.api_key },
+          memberRole.project_id,
+          member.email
+        );
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from('project_member_roles')
+        .delete()
+        .eq('id', memberRole.id);
+
+      if (deleteError) {
+        console.error('Failed to delete project member role:', deleteError);
+        return res.status(500).json({ error: 'Removed from Hopsworks but failed to update records. Refresh and retry.' });
+      }
+
+      return res.status(200).json({
+        message: `${member.email} removed from ${projectName}`,
+        project: projectName
+      });
+    } catch (error: any) {
+      console.error('Failed to remove member from project:', error);
+      return res.status(502).json({ error: `Failed to remove from project: ${error.message || 'Hopsworks error'}` });
+    }
+
+  } else if (req.method === 'GET') {
     // Team member project tracking removed - too complex for read-only display
     // Users should manage projects directly in Hopsworks UI
-    // See docs/reference/hopsworks-api.md for implementation details
     return res.status(200).json({
       projects: [],
       pendingCount: 0,
@@ -39,168 +111,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 }
-
-/* POST method removed - team member project assignment should be done via Hopsworks UI
-  } else if (req.method === 'POST') {
-    const { memberId, projectName, projectId, role, action } = req.body;
-
-    if (!memberId || !projectName || !action) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    // Validate role
-    const validRoles = ['Data owner', 'Data scientist'];
-    if (action === 'add' && !validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role' });
-    }
-
-    try {
-      // Verify the member belongs to this owner's team
-      const { data: teamMember } = await supabaseAdmin
-        .from('users')
-        .select('account_owner_id, hopsworks_user_id, hopsworks_username, email')
-        .eq('id', memberId)
-        .single();
-
-      if (!teamMember || teamMember.account_owner_id !== userId) {
-        return res.status(403).json({ error: 'Member not in your team' });
-      }
-
-      if (!teamMember.hopsworks_user_id) {
-        return res.status(400).json({ error: 'Member has no Hopsworks user ID yet' });
-      }
-
-      // Get owner's cluster credentials
-      const { data: owner } = await supabaseAdmin
-        .from('users')
-        .select(`
-          user_hopsworks_assignments!inner (
-            hopsworks_cluster_id,
-            hopsworks_clusters!inner (
-              api_url,
-              api_key
-            )
-          )
-        `)
-        .eq('id', userId)
-        .single();
-
-      if (!owner?.user_hopsworks_assignments?.[0]) {
-        return res.status(404).json({ error: 'No cluster assignment found' });
-      }
-
-      const assignment = owner.user_hopsworks_assignments[0] as any;
-      const credentials = {
-        apiUrl: assignment.hopsworks_clusters.api_url,
-        apiKey: assignment.hopsworks_clusters.api_key
-      };
-
-      if (action === 'add') {
-        // Check if user already has a role for this project
-        const { data: existingRole } = await supabaseAdmin
-          .from('project_member_roles')
-          .select('*')
-          .eq('member_id', memberId)
-          .eq('project_name', projectName)
-          .eq('account_owner_id', userId)
-          .single();
-
-        if (existingRole) {
-          // User already has access to this project - check if it's just a role change
-          if (existingRole.role === role) {
-            return res.status(400).json({
-              error: `${teamMember.email} already has ${role} access to ${projectName}`
-            });
-          }
-
-          // This is a role change - only allow if already synced to Hopsworks
-          if (!existingRole.synced_to_hopsworks) {
-            return res.status(400).json({
-              error: `Cannot change role for ${teamMember.email} in ${projectName} - initial sync pending or failed`
-            });
-          }
-
-          // For role changes, we should update not create
-          // But Hopsworks doesn't support role updates via API yet
-          return res.status(400).json({
-            error: 'Role changes are not yet supported. Please remove the user and re-add with the new role.'
-          });
-        }
-
-        // This is a new assignment - create it
-        const { data: roleRecord, error: dbError } = await supabaseAdmin
-          .rpc('upsert_project_member_role', {
-            p_member_id: memberId,
-            p_owner_id: userId,
-            p_project_id: projectId || 0, // Will need to get this from Hopsworks
-            p_project_name: projectName,
-            p_role: role,
-            p_added_by: userId
-          });
-
-        if (dbError) {
-          console.error('Failed to save role to database:', dbError);
-          return res.status(500).json({ error: 'Failed to save project assignment' });
-        }
-
-        try {
-          // Then sync to Hopsworks
-          await addUserToProject(credentials, projectName, teamMember.hopsworks_user_id, role as any);
-
-          // Mark as synced if successful
-          if (roleRecord) {
-            await supabaseAdmin
-              .from('project_member_roles')
-              .update({
-                synced_to_hopsworks: true,
-                last_sync_at: new Date().toISOString(),
-                sync_error: null
-              })
-              .eq('id', roleRecord);
-          }
-
-          return res.status(200).json({
-            message: `Successfully added ${teamMember.email} to ${projectName} as ${role}`,
-            project: projectName,
-            role,
-            synced: true
-          });
-
-        } catch (hopsworksError: any) {
-          // If Hopsworks sync fails, keep the record but mark it as unsynced
-          const errorMessage = hopsworksError.message || 'Failed to sync to Hopsworks';
-          console.error('Hopsworks sync failed:', errorMessage);
-
-          if (roleRecord) {
-            await supabaseAdmin
-              .from('project_member_roles')
-              .update({
-                synced_to_hopsworks: false,
-                last_sync_at: new Date().toISOString(),
-                sync_error: errorMessage
-              })
-              .eq('id', roleRecord);
-          }
-
-          // Return success but with sync warning
-          return res.status(200).json({
-            message: `Added ${teamMember.email} to ${projectName} as ${role} (pending sync)`,
-            project: projectName,
-            role,
-            synced: false,
-            warning: 'Project assignment saved but could not sync to Hopsworks',
-            syncError: errorMessage
-          });
-        }
-
-        // This line was moved into the try block above
-
-      } else {
-        return res.status(400).json({ error: 'Invalid action. Only "add" is supported.' });
-      }
-
-    } catch (error) {
-      console.error('Failed to manage project role:', error);
-      return res.status(500).json({ error: 'Failed to update project role' });
-    }
-*/

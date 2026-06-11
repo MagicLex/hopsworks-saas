@@ -440,6 +440,30 @@ export default function Dashboard() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [removingMember, setRemovingMember] = useState(false);
+  const [removingMemberProject, setRemovingMemberProject] = useState<{ memberId: string; projectName: string } | null>(null);
+
+  const handleRemoveMemberProject = async (memberId: string, memberEmail: string, projectName: string) => {
+    if (!confirm(`Remove ${memberEmail} from project ${projectName}?`)) return;
+
+    setRemovingMemberProject({ memberId, projectName });
+    try {
+      const response = await fetch('/api/team/member-projects', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, projectName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to remove from project');
+
+      toast.success(`${memberEmail} removed from ${projectName}`);
+      await refetchTeamData();
+    } catch (error: any) {
+      console.error('Failed to remove member from project:', error);
+      toast.error(error.message || 'Failed to remove from project');
+    } finally {
+      setRemovingMemberProject(null);
+    }
+  };
 
   const handleRemoveMember = async (memberId: string) => {
     setRemovingMemberId(memberId);
@@ -1002,6 +1026,8 @@ mr = project.get_model_registry()`;
                                   memberName={member.name || member.email}
                                   hopsworksUsername={member.hopsworks_username}
                                   projects={member.project_member_roles}
+                                  onRemoveProject={(projectName) => handleRemoveMemberProject(member.id, member.email, projectName)}
+                                  removingProject={removingMemberProject?.memberId === member.id ? removingMemberProject.projectName : null}
                                 />
                               </div>
                             </div>

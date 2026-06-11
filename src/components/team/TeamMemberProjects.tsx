@@ -1,4 +1,4 @@
-import { CheckCircle, AlertCircle, FolderOpen } from 'lucide-react';
+import { CheckCircle, AlertCircle, FolderOpen, X } from 'lucide-react';
 
 interface ProjectRole {
   project_name: string;
@@ -13,11 +13,16 @@ interface TeamMemberProjectsProps {
   hopsworksUsername?: string;
   clusterUrl?: string;
   projects?: ProjectRole[];
+  /** Owner-only: remove the member from one project. Renders an X on each chip. */
+  onRemoveProject?: (projectName: string) => void;
+  removingProject?: string | null;
 }
 
 export default function TeamMemberProjects({
   hopsworksUsername,
   projects,
+  onRemoveProject,
+  removingProject,
 }: TeamMemberProjectsProps) {
   const isActive = !!hopsworksUsername;
   const syncedProjects = projects?.filter((p) => p.synced_to_hopsworks) || [];
@@ -50,10 +55,21 @@ export default function TeamMemberProjects({
             {syncedProjects.map((project) => (
               <span
                 key={project.project_name}
-                className="inline-flex items-center text-xs px-2 py-0.5 rounded bg-muted text-foreground"
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-muted text-foreground"
                 title={`Role: ${project.role}`}
               >
                 {project.project_name}
+                {onRemoveProject && (
+                  <button
+                    type="button"
+                    aria-label={`Remove from ${project.project_name}`}
+                    className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                    disabled={removingProject === project.project_name}
+                    onClick={() => onRemoveProject(project.project_name)}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </span>
             ))}
           </div>
