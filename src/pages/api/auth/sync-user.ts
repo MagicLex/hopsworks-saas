@@ -99,6 +99,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let metadata: any = {};
       let registrationSource = 'organic';
 
+      // Unverified emails never become accounts: Auth0 database signups must
+      // click the verification link first (OAuth providers arrive verified).
+      // Only explicit false blocks — a missing claim (some SSO connections)
+      // passes, so we never lock out enterprise logins.
+      if ((session.user as any).email_verified === false) {
+        console.log(`[Signup] ${email} blocked: email not verified`);
+        return res.status(403).json({
+          error: 'Please verify your email address first. Check your inbox for the verification link, then sign in again.',
+          emailVerificationRequired: true
+        });
+      }
+
       const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
 
       // Signup abuse gates: disposable email, abuse-suspended IP reuse,

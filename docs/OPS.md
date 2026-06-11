@@ -72,10 +72,11 @@ Rotate on both sides together; mismatched secrets surface as `401` from the rece
 
 Mining farms sign up from datacenter IPs with throwaway emails (the 2026-06 batch: one EC2 af-south-1 farm, 9 accounts) to farm free compute. Four gates, all in the signup path:
 
-**Hard blocks before account creation** (`src/lib/signup-abuse.ts`, called by `sync-user`; 403, no `users` row created, stolen cards don't help):
-1. Disposable email domain — `disposable-email-domains` package (~120k domains) + local extras + `EXTRA_BLOCKED_EMAIL_DOMAINS` env (comma-separated, no deploy needed).
-2. IP reuse — signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
-3. Per-IP velocity — third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
+**Hard blocks before account creation** (403, no `users` row created, stolen cards don't help):
+1. Unverified email — Auth0 `email_verified === false` (database signups must click the verification link; OAuth arrives verified; missing claim passes so SSO is never locked out).
+2. Disposable email domain — `disposable-email-domains` package (~120k domains) + local extras + `EXTRA_BLOCKED_EMAIL_DOMAINS` env (comma-separated, no deploy needed). (`src/lib/signup-abuse.ts`)
+3. IP reuse — signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
+4. Per-IP velocity — third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
 
 **Soft flags after creation** (card-before-free, NOT blocked):
 - Hosting ASN (`src/lib/asn-check.ts`): registration IP's ASN resolved via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open), stored in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers).
