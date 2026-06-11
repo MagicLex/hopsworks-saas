@@ -1019,7 +1019,7 @@ mr = project.get_model_registry()`;
                                   </Button>
                                 </div>
                               </div>
-                              <div className="mt-4">
+                              <div className="mt-3">
                                 <TeamMemberProjects
                                   memberId={member.id}
                                   memberEmail={member.email}
