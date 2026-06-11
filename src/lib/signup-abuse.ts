@@ -26,6 +26,24 @@ const DISPOSABLE_DOMAINS = new Set<string>([
 // shared IPs) dies at account #3 of any shared IP.
 const MAX_SIGNUPS_PER_IP_PER_DAY = 2;
 
+// Anonymity-friendly providers favored by abusers (June 2026 data: 4 of 11
+// proton accounts were mining-suspended, vs 2.9% for gmail). Not blocked:
+// like hosting ASNs, these signups must validate a card before free compute.
+// CARD_REQUIRED_EMAIL_DOMAINS (comma-separated env) extends without a deploy.
+const CARD_REQUIRED_DOMAINS = new Set<string>([
+  'proton.me',
+  'protonmail.com',
+  'protonmail.ch',
+  'pm.me',
+  'proton.ch',
+  ...(process.env.CARD_REQUIRED_EMAIL_DOMAINS?.split(',').map(d => d.trim().toLowerCase()).filter(Boolean) ?? []),
+]);
+
+export function isCardRequiredEmail(email: string): boolean {
+  const domain = email.split('@')[1]?.toLowerCase();
+  return !!domain && CARD_REQUIRED_DOMAINS.has(domain);
+}
+
 export function isDisposableEmail(email: string): boolean {
   const domain = email.split('@')[1]?.toLowerCase();
   return !!domain && DISPOSABLE_DOMAINS.has(domain);

@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
 import { checkRegistrationIp } from '../../../lib/asn-check';
-import { checkSignupAbuse } from '../../../lib/signup-abuse';
+import { checkSignupAbuse, isCardRequiredEmail } from '../../../lib/signup-abuse';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
 
@@ -121,6 +121,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           metadata.hosting_asn = true;
           console.log(`[ASN check] ${email} signed up from hosting ASN ${asnInfo.asn} (${asnInfo.asnOrg}) - flagged for payment validation`);
         }
+      }
+
+      // Anonymity-friendly email providers get the same card-before-free gate
+      if (isCardRequiredEmail(email)) {
+        metadata.card_required_email = true;
+        console.log(`[Signup abuse] ${email} uses a card-required email domain - flagged for payment validation`);
       }
 
       // Handle corporate registration

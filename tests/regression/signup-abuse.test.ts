@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { checkSignupAbuse, isDisposableEmail } from '@/lib/signup-abuse';
+import { checkSignupAbuse, isDisposableEmail, isCardRequiredEmail } from '@/lib/signup-abuse';
 
 function supabaseStub(rows: any[], error: any = null) {
   return {
@@ -30,6 +30,19 @@ describe('isDisposableEmail', () => {
   it('allows regular providers', () => {
     expect(isDisposableEmail('dev@gmail.com')).toBe(false);
     expect(isDisposableEmail('qa@witnessai.com')).toBe(false);
+  });
+});
+
+describe('isCardRequiredEmail', () => {
+  it('flags anonymity-friendly providers (card-before-free, not blocked)', () => {
+    expect(isCardRequiredEmail('gregorygnatt@proton.me')).toBe(true);
+    expect(isCardRequiredEmail('x@protonmail.com')).toBe(true);
+    expect(isCardRequiredEmail('x@pm.me')).toBe(true);
+  });
+
+  it('does not flag mainstream providers', () => {
+    expect(isCardRequiredEmail('dev@gmail.com')).toBe(false);
+    expect(isCardRequiredEmail('qa@witnessai.com')).toBe(false);
   });
 });
 

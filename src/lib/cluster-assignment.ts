@@ -163,11 +163,12 @@ export async function assignUserToCluster(
       };
     }
 
-    // Defense in depth: hosting-ASN flagged signups don't get free-tier clusters.
-    // Card validation happens in start-free / accept-terms; admin manual assignment bypasses.
+    // Defense in depth: flagged signups (hosting ASN / card-required email)
+    // don't get free-tier clusters. Card validation happens in start-free /
+    // accept-terms; admin manual assignment bypasses.
     const userMeta = (user as any).metadata ?? {};
     if (!isManualAssignment && !user.account_owner_id && user.billing_mode === 'free'
-        && userMeta.hosting_asn && !userMeta.hosting_asn_validated) {
+        && (userMeta.hosting_asn || userMeta.card_required_email) && !userMeta.hosting_asn_validated) {
       return {
         success: false,
         error: 'payment_validation_required: hosting-provider signup without validated payment method'

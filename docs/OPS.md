@@ -77,7 +77,11 @@ Mining farms sign up from datacenter IPs with throwaway emails (the 2026-06 batc
 2. IP reuse — signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
 3. Per-IP velocity — third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
 
-**Soft flag after creation** (`src/lib/asn-check.ts`): registration IP's ASN resolved via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open), stored in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers). Flagged accounts are NOT blocked: they cannot take the free tier until a card is on file (`start-free` / `accept-terms` return 403 `requiresPaymentValidation`; `assignUserToCluster` refuses as backstop). Once a card exists, `hosting_asn_validated: true` is persisted.
+**Soft flags after creation** (card-before-free, NOT blocked):
+- Hosting ASN (`src/lib/asn-check.ts`): registration IP's ASN resolved via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open), stored in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers).
+- Card-required email domains (`metadata.card_required_email`): proton.me & family (June 2026 data: 4 of 11 proton accounts mining-suspended vs 2.9% for gmail). Extend via `CARD_REQUIRED_EMAIL_DOMAINS` env.
+
+Flagged accounts cannot take the free tier until a card is on file (`start-free` / `accept-terms` return 403 `requiresPaymentValidation`; `assignUserToCluster` refuses as backstop). Once a card exists, `hosting_asn_validated: true` is persisted.
 
 Operator notes:
 - Blocked signups: grep Vercel logs for `[Signup abuse]`.

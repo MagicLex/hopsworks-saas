@@ -91,9 +91,10 @@ export function parseCymruTxt(txt: string): number | null {
 }
 
 /**
- * Free-tier gate for hosting-ASN signups. Returns true when the user may
- * proceed (not flagged, already validated, or has a card on file — in which
- * case the validated marker is persisted so we never re-check Stripe).
+ * Free-tier gate for flagged signups (hosting ASN or card-required email
+ * domain). Returns true when the user may proceed (not flagged, already
+ * validated, or has a card on file — in which case the validated marker is
+ * persisted so we never re-check Stripe).
  * Admin can override by setting metadata.hosting_asn_validated manually.
  */
 export async function hostingSignupCanGoFree(
@@ -102,7 +103,7 @@ export async function hostingSignupCanGoFree(
   user: { metadata?: Record<string, unknown> | null; stripe_customer_id?: string | null }
 ): Promise<boolean> {
   const meta = user.metadata ?? {};
-  if (!meta.hosting_asn) return true;
+  if (!meta.hosting_asn && !meta.card_required_email) return true;
   if (meta.hosting_asn_validated) return true;
   if (!user.stripe_customer_id) return false;
 
