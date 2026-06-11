@@ -7,11 +7,7 @@ interface ProjectRole {
 }
 
 interface TeamMemberProjectsProps {
-  memberId: string;
-  memberEmail: string;
-  memberName: string;
   hopsworksUsername?: string;
-  clusterUrl?: string;
   projects?: ProjectRole[];
 }
 
@@ -38,7 +34,7 @@ export default function TeamMemberProjects({
         ) : (
           <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-quartz-label-yellow-shade2 text-quartz-label-orange border border-quartz-label-orange">
             <AlertCircle size={12} className="mr-1" />
-            Syncing to Hopsworks...
+            Pending first Hopsworks login
           </span>
         )}
       </div>

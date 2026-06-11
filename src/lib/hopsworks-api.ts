@@ -230,43 +230,6 @@ export async function getUserProjects(
 }
 
 /**
- * Get project usage for a specific date
- */
-export async function getProjectUsage(
-  credentials: HopsworksCredentials,
-  projectId: number,
-  date: string
-): Promise<ProjectUsage> {
-  // This endpoint needs to be implemented by Hopsworks
-  // For now, we'll return mock data structure
-  const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${HOPSWORKS_API_BASE}/admin/projects/${projectId}/usage?date=${date}`,
-    {
-      headers: {
-        'Authorization': `ApiKey ${credentials.apiKey}`
-      },
-      // @ts-ignore
-      agent: httpsAgent
-    }
-  );
-
-  if (!response.ok) {
-    // If endpoint doesn't exist yet, return empty usage
-    if (response.status === 404) {
-      return {
-        date,
-        compute: { instances: [] },
-        storage: { featureStore: 0, models: 0, datasets: 0, total: 0 },
-        apiCalls: { featureStore: 0, modelServing: 0, jobs: 0, total: 0 }
-      };
-    }
-    throw new Error(`Failed to fetch project usage: ${response.statusText}`);
-  }
-
-  return await response.json();
-}
-
-/**
  * Get user by email (works for OAuth2 users)
  */
 export async function getHopsworksUserByEmail(
@@ -404,32 +367,6 @@ export async function getHopsworksUserById(
   }
 }
 
-
-/**
- * Get all users (admin endpoint)
- */
-export async function getAllUsers(
-  credentials: HopsworksCredentials,
-  authToken: string
-): Promise<HopsworksUser[]> {
-  const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/users`,
-    {
-      headers: {
-        'Authorization': authToken
-      },
-      // @ts-ignore
-      agent: httpsAgent
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch users: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.items || [];
-}
 
 /**
  * Get all projects (admin endpoint)

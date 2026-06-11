@@ -4,12 +4,12 @@ Architectural contracts. Verify before merging any significant change. Each item
 
 Audited: 2026-05-08.
 
-## Quota and ratchet
+## Quota
 
-### I-1. Every `maxNumProjects` write site uses a `<` guard
-Hopsworks counts created projects, not active. Lowering the limit locks users out.
-- **Check**: `rg 'maxNumProjects' src/ | rg -v '< (1|5|expectedMaxProjects)'` should return only reads, comments, and error logs (no `!==` or unconditional set).
-- **Status**: PASS. All write sites in `cluster-assignment.ts`, `webhooks/stripe.ts`, `billing.ts`, `billing/setup-payment.ts` guard with `(hwUser.maxNumProjects ?? 0) < N`.
+### I-1. Every `maxNumProjects` write site sets the tier baseline exactly
+Since the EE saas-augmentation deploy, Hopsworks counts active projects and frees the quota slot on deletion. There is no ratchet to preserve: every billing event pushes the tier baseline strictly (1 free, 5 paid, 0 team member / no billing). A `<`-only guard is now a bug (it blocks downgrades).
+- **Check**: `rg 'maxNumProjects' src/` shows no `< (1|5|expectedMaxProjects)` write guards; write sites call `updateUserProjectLimit` with the baseline.
+- **Status**: PASS (switch branch). Write sites: `cluster-assignment.ts`, `webhooks/stripe.ts`, `billing.ts`, `billing/setup-payment.ts`.
 
 ### I-2. Project counts come from synced `user_projects`, not Hopsworks API
 - **Check**: `rg 'numActiveProjects|maxNumProjects' src/pages/api/billing.ts src/pages/api/usage.ts` shows no use of these fields for billing decisions.

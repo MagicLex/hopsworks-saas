@@ -141,7 +141,7 @@ export async function syncUserProjects(userId: string): Promise<ProjectSyncResul
     }
 
     // Get existing ACTIVE project IDs for this user
-    // Only active so we don't re-process already-deactivated projects (and re-bump quota)
+    // Only active so we don't re-process already-deactivated projects
     const { data: existingProjects } = await supabaseAdmin
       .from('user_projects')
       .select('project_id')
@@ -193,54 +193,6 @@ export async function syncUserProjects(userId: string): Promise<ProjectSyncResul
 
   } catch (error) {
     console.error('Project sync error:', error);
-    return { 
-      success: false, 
-      projectsFound: 0, 
-      projectsSynced: 0, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    };
-  }
-}
-
-/**
- * Syncs all team member projects for an account owner
- * This ensures team members have access to the right projects
- */
-export async function syncTeamMemberProjects(accountOwnerId: string): Promise<ProjectSyncResult> {
-  try {
-    // Get all team members
-    const { data: teamMembers } = await supabaseAdmin
-      .from('users')
-      .select('id, hopsworks_username')
-      .eq('account_owner_id', accountOwnerId)
-      .not('hopsworks_username', 'is', null);
-
-    if (!teamMembers || teamMembers.length === 0) {
-      return { 
-        success: true, 
-        projectsFound: 0, 
-        projectsSynced: 0 
-      };
-    }
-
-    let totalFound = 0;
-    let totalSynced = 0;
-
-    // Sync each team member
-    for (const member of teamMembers) {
-      const result = await syncUserProjects(member.id);
-      totalFound += result.projectsFound;
-      totalSynced += result.projectsSynced;
-    }
-
-    return { 
-      success: true, 
-      projectsFound: totalFound, 
-      projectsSynced: totalSynced 
-    };
-
-  } catch (error) {
-    console.error('Team sync error:', error);
     return { 
       success: false, 
       projectsFound: 0, 

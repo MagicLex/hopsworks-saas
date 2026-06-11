@@ -40,36 +40,24 @@ describe('maxNumProjects calculation', () => {
   });
 });
 
-describe('health check patterns in sync-user', () => {
-  it('corrects maxNumProjects if mismatched', async () => {
+describe('health check patterns', () => {
+  it('sync-user does not reconcile Hopsworks state (event-driven via webhook)', async () => {
     const fs = await import('fs');
     const path = await import('path');
 
     const sourceFile = path.join(process.cwd(), 'src/pages/api/auth/sync-user.ts');
     const source = fs.readFileSync(sourceFile, 'utf-8');
 
-    // Should calculate expected maxNumProjects
-    expect(source).toContain('expectedMaxProjects');
+    // Health checks 3-7 were removed: no per-login maxNumProjects push,
+    // no Hopsworks user creation at login
+    expect(source).not.toContain('updateUserProjectLimit');
+    expect(source).not.toContain('createHopsworksOAuthUser');
 
-    // Should compare current vs expected
-    expect(source).toContain('currentMaxProjects !== expectedMaxProjects');
-
-    // Should fix if different
-    expect(source).toContain('updateUserProjectLimit');
-  });
-
-  it('uses correct priority: team member > free > paid > 0', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-
-    const sourceFile = path.join(process.cwd(), 'src/pages/api/auth/sync-user.ts');
-    const source = fs.readFileSync(sourceFile, 'utf-8');
-
-    // The logic should check team member first (returns 0)
-    // Then check free tier (returns 1)
-    // Then check paid (returns 5)
-    // Default to 0
-    expect(source).toContain('isTeamMember ? 0');
+    // The webhook receiver owns user linking now
+    const webhookFile = path.join(process.cwd(), 'src/pages/api/webhooks/hopsworks-lifecycle.ts');
+    const webhook = fs.readFileSync(webhookFile, 'utf-8');
+    expect(webhook).toContain('handleUserUpserted');
+    expect(webhook).toContain('hopsworks_user_id');
   });
 
   it('creates hopsworks user with retry logic', async () => {

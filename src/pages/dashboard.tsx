@@ -65,8 +65,6 @@ interface UsageData {
   gpuHours: number;
   ramGbHours?: number;
   storageGB: number;
-  featureGroups: number;
-  modelDeployments: number;
   lastUpdate?: string;
   projectBreakdown?: Record<string, {
     cpuHours: number;
@@ -360,6 +358,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error upgrading to postpaid:', error);
+      toast.error('Failed to start the upgrade. Please try again.');
       setUpgradingToPostpaid(false);
     }
   };
@@ -473,6 +472,7 @@ export default function Dashboard() {
       await fetchInvites();
     } catch (error) {
       console.error('Error canceling invite:', error);
+      toast.error('Failed to cancel invite. Please try again.');
     }
   };
 
@@ -950,9 +950,6 @@ mr = project.get_model_registry()`;
                               </div>
                               <div className="mt-4">
                                 <TeamMemberProjects
-                                  memberId={member.id}
-                                  memberEmail={member.email}
-                                  memberName={member.name || member.email}
                                   hopsworksUsername={member.hopsworks_username}
                                   projects={member.project_member_roles}
                                 />
@@ -1042,9 +1039,6 @@ mr = project.get_model_registry()`;
                         <h2 className="text-lg font-semibold">My Project Access</h2>
                       </div>
                       <TeamMemberProjects
-                        memberId={user?.sub || ''}
-                        memberEmail={user?.email || ''}
-                        memberName={user?.name || user?.email || ''}
                         hopsworksUsername={teamData?.team_members.find(m => m.id === user?.sub)?.hopsworks_username}
                       />
                     </Card>
@@ -1433,8 +1427,10 @@ mr = project.get_model_registry()`;
                                     method: 'POST'
                                   });
                                   const data = await response.json();
-                                  if (data.portalUrl) {
+                                  if (response.ok && data.portalUrl) {
                                     window.open(data.portalUrl, '_blank');
+                                  } else {
+                                    throw new Error(data.error || 'No portal URL returned');
                                   }
                                 } catch (error) {
                                   console.error('Failed to open billing portal:', error);
@@ -1765,24 +1761,12 @@ mr = project.get_model_registry()`;
               icon={<AlertTriangle size={20} className="text-quartz-label-orange flex-shrink-0 mt-0.5" />}
             >
               <p className="text-sm font-medium mb-2">
-                Manual action required in Hopsworks
+                This removes their access immediately
               </p>
               <p className="text-sm">
-                This will remove the team member from your SaaS account, but you must manually remove them from your Hopsworks projects.
+                The member is suspended and removed from all your Hopsworks projects.
               </p>
             </StatusBox>
-
-            <div>
-              <p className="text-sm text-foreground mb-2">
-                After removing this member:
-              </p>
-              <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1 ml-2">
-                <li>Go to your Hopsworks cluster</li>
-                <li>Open each project they have access to</li>
-                <li>Navigate to Settings &rarr; Members</li>
-                <li>Remove the user from the project</li>
-              </ol>
-            </div>
 
             <p className="text-sm text-muted-foreground">
               The user will be converted to a standalone account and can create their own billing.

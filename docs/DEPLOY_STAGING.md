@@ -153,7 +153,7 @@ against staging:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $STAGING_CRON_SECRET" \
-  https://dev.run.hopsworks.ai/api/cron/sync-projects
+  https://dev.run.hopsworks.ai/api/cron/check-data-integrity
 ```
 
 `STAGING_CRON_SECRET` value: pull with `vercel env pull --environment=preview .env.preview`.

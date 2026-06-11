@@ -395,15 +395,16 @@ export default function AdminPage() {
               });
 
               if (assignResponse.ok) {
-                console.log(`Cluster assigned successfully for ${email}`);
+                toast.success(`Cluster assigned for ${email}`);
               } else {
                 const assignData = await assignResponse.json();
-                console.error(`Failed to assign cluster: ${assignData.error}`);
+                toast.error(`Failed to assign cluster for ${email}: ${assignData.error}`);
               }
 
               fetchUsers(); // Refresh after assignment
             } catch (error) {
               console.error('Failed to assign cluster:', error);
+              toast.error(`Failed to assign cluster for ${email}`);
             }
           }, 5000);
         } else {

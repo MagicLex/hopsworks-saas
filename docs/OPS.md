@@ -38,13 +38,13 @@ Full cluster reference: `docs/operations/saas-cluster.md`.
 |-----|----------|----------|------|
 | OpenCost collection | hourly `0 * * * *` | `POST /api/usage/collect-opencost` | `CRON_SECRET` bearer |
 | Stripe meter sync | daily `0 3 * * *` | `POST /api/billing/sync-stripe` | `CRON_SECRET` bearer |
-| Data integrity check | daily `0 6 * * *` | `POST /api/cron/check-data-integrity` | `CRON_SECRET` bearer |
+| Data integrity check | weekly `0 6 * * 1` | `POST /api/cron/check-data-integrity` | `CRON_SECRET` bearer |
 
 > **Note**: the former `/api/cron/sync-projects` (every 30min) was retired with brief #3. Project state is now reconciled event-driven via the lifecycle webhook receiver. Don't reintroduce a polling cron without first checking that webhook delivery has degraded.
 
 Vercel cron is the fallback. Primary scheduler is Windmill (`https://auto.hops.io`). If both run, the handlers are re-entrant; usage rows upsert on `(user_id, date, hour)`.
 
-All four routes fail-hard with `500` if `CRON_SECRET` is unset — no silent open access. Configured via `vercel env add CRON_SECRET <env>`.
+All three routes fail-hard with `500` if `CRON_SECRET` is unset — no silent open access. Configured via `vercel env add CRON_SECRET <env>`.
 
 ## Internal-call auth
 
@@ -61,7 +61,7 @@ echo "$(openssl rand -hex 32)" | vercel env add INTERNAL_API_SECRET production -
 
 ## Hopsworks lifecycle webhook (inbound)
 
-The cluster posts user/project/membership events to `POST /api/webhooks/hopsworks-lifecycle` (brief #3, receiver TBD). Body is signed `HMAC-SHA256(body, HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET)`, header `X-Hopsworks-Signature: sha256=<hex>`. The same secret value must be set:
+The cluster posts user/project/membership events to `POST /api/webhooks/hopsworks-lifecycle` (brief #3). The receiver handles `user.created/updated/deleted`, `project.created/deleted` and `project.member.*`, reconciling `users`, `user_projects` and `project_member_roles`. Body is signed `HMAC-SHA256(body, HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET)`, header `X-Hopsworks-Signature: sha256=<hex>`. The same secret value must be set:
 
 - Cluster side: Hopsworks `Settings` key `LIFECYCLE_WEBHOOK_SECRET`
 - SaaS side: Vercel env `HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET` (scopes `Preview` + `staging`; add `Production` once the prod cluster runs the matching backend build)
@@ -157,7 +157,7 @@ First reflex: **Vercel logs** (production runtime). Filter by route, search for 
 | User suspended in DB, active in Hopsworks | Vercel logs `[suspendUser]` errors | `docs/features/user-lifecycle.md` |
 | OpenCost returning zeros | `kubectl exec` reachability, OpenCost pod ready, kubeconfig in `hopsworks_clusters` | `docs/operations/opencost-collection.md` |
 | Billing endpoint 500 | Hopsworks API down or `syncUserProjects` throwing | `docs/features/billing.md`, retry after Hopsworks recovers |
-| User can create projects beyond plan | Ratchet was reset by some new write site without `<` guard | I-1 in `docs/INVARIANTS.md`, audit `rg maxNumProjects src/` |
+| User can create projects beyond plan | A write site pushes a wrong tier baseline | I-1 in `docs/INVARIANTS.md`, audit `rg maxNumProjects src/` |
 | "Account type not provided" on user creation | Hopsworks admin API expects query params, not JSON body | `docs/troubleshooting/user-creation-workaround.md` |
 | Stripe webhook 401 | Signature mismatch. Check `STRIPE_WEBHOOK_SECRET` in Vercel matches the endpoint secret in Stripe dashboard | `docs/architecture/security.md` |
 | Auth0 callback "baseURL must be a valid uri" | Trailing newline in `AUTH0_BASE_URL` Vercel env var | `docs/troubleshooting/known-issues.md` §2 |
@@ -169,7 +169,6 @@ Detailed playbooks live in `docs/troubleshooting/`. Hopsworks DB direct query: `
 
 | Action | Endpoint | Notes |
 |--------|----------|-------|
-| Bulk fix project quotas | `POST /api/admin/fix-project-quotas` | Idempotent. `{"dryRun": true}` to preview |
 | List users with usage | `GET /api/admin/users` | Per-project breakdown |
 | Manual user reactivation | Admin panel → user → reactivate | Triggers Hopsworks status reset |
 
