@@ -193,6 +193,8 @@ export default function Dashboard() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('Data scientist');
   const [autoAssignProjects, setAutoAssignProjects] = useState(true);
+  const [ownerProjects, setOwnerProjects] = useState<{ id: number; name: string }[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [invites, setInvites] = useState<TeamInvite[]>([]);
@@ -409,7 +411,10 @@ export default function Dashboard() {
         body: JSON.stringify({
           email: inviteEmail,
           projectRole: inviteRole,
-          autoAssignProjects
+          // "all" → assign all current + future projects (projectIds null).
+          // specific → assign only the picked subset.
+          autoAssignProjects: autoAssignProjects || selectedProjectIds.length > 0,
+          projectIds: autoAssignProjects ? null : selectedProjectIds
         })
       });
 
@@ -424,6 +429,7 @@ export default function Dashboard() {
       setInviteEmail('');
       setInviteRole('Data scientist');
       setAutoAssignProjects(true);
+      setSelectedProjectIds([]);
     } catch (error: any) {
       setInviteError(error.message);
     } finally {
@@ -1009,7 +1015,13 @@ mr = project.get_model_registry()`;
                       </div>
 
                       <div className="mt-4">
-                        <Button onClick={() => setShowInviteModal(true)}>
+                        <Button onClick={() => {
+                          setShowInviteModal(true);
+                          fetch('/api/team/owner-projects')
+                            .then(r => r.ok ? r.json() : { projects: [] })
+                            .then(d => setOwnerProjects(d.projects || []))
+                            .catch(() => setOwnerProjects([]));
+                        }}>
                           Invite Member
                         </Button>
                       </div>
@@ -1703,6 +1715,7 @@ mr = project.get_model_registry()`;
             setInviteEmail('');
             setInviteRole('Data scientist');
             setAutoAssignProjects(true);
+            setSelectedProjectIds([]);
             setInviteError('');
           }
         }}
@@ -1753,16 +1766,55 @@ mr = project.get_model_registry()`;
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="auto-assign-projects"
-                checked={autoAssignProjects}
-                onCheckedChange={(checked) => setAutoAssignProjects(checked === true)}
-                disabled={inviteLoading}
-              />
-              <Label htmlFor="auto-assign-projects" className="text-sm">
-                Automatically add to all my existing projects
-              </Label>
+            <div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="auto-assign-projects"
+                  checked={autoAssignProjects}
+                  onCheckedChange={(checked) => {
+                    const all = checked === true;
+                    setAutoAssignProjects(all);
+                    if (all) setSelectedProjectIds([]);
+                  }}
+                  disabled={inviteLoading}
+                />
+                <Label htmlFor="auto-assign-projects" className="text-sm">
+                  Add to all my projects
+                </Label>
+              </div>
+
+              {!autoAssignProjects && (
+                <div className="mt-3 pl-1">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {ownerProjects.length === 0
+                      ? 'No projects yet. The member will join the team without project access.'
+                      : 'Pick the projects they should join:'}
+                  </p>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {ownerProjects.map((p) => {
+                      const id = String(p.id);
+                      const checked = selectedProjectIds.includes(id);
+                      return (
+                        <div key={id} className="flex items-center gap-2">
+                          <Checkbox
+                            id={`invite-project-${id}`}
+                            checked={checked}
+                            onCheckedChange={(c) =>
+                              setSelectedProjectIds((prev) =>
+                                c === true ? [...prev, id] : prev.filter((x) => x !== id)
+                              )
+                            }
+                            disabled={inviteLoading}
+                          />
+                          <Label htmlFor={`invite-project-${id}`} className="text-sm font-normal">
+                            {p.name}
+                          </Label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3">
@@ -1773,6 +1825,7 @@ mr = project.get_model_registry()`;
                   setInviteEmail('');
                   setInviteRole('Data scientist');
                   setAutoAssignProjects(true);
+                  setSelectedProjectIds([]);
                   setInviteError('');
                 }}
                 disabled={inviteLoading}

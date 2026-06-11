@@ -195,12 +195,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             mysqlPassword: assignment.hopsworks_clusters.mysql_password
           };
 
-          // Get owner's projects
+          // Get owner's projects, then narrow to the invite's selection.
+          // project_ids null/empty = all projects (legacy); otherwise the subset.
           const ownerProjects = await getUserProjects(credentials, owner.hopsworks_username);
+          const selectedIds: string[] | null = invite.project_ids;
+          const projectsToAssign = selectedIds && selectedIds.length > 0
+            ? ownerProjects.filter((p) => selectedIds.includes(String(p.id)))
+            : ownerProjects;
           const projectRole = invite.project_role || 'Data scientist';
 
           // Add team member to each project
-          for (const project of ownerProjects) {
+          for (const project of projectsToAssign) {
             try {
               await addUserToProject(credentials, project.name, teamMember.hopsworks_user_id, projectRole);
               projectsAssigned.push(project.name);

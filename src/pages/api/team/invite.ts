@@ -26,7 +26,17 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
 
   if (req.method === 'POST') {
     try {
-      const { email, projectRole, autoAssignProjects = true } = req.body;
+      const { email, projectRole, autoAssignProjects = true, projectIds } = req.body;
+
+      // projectIds: explicit subset of owner projects, or null/undefined for
+      // "all projects" (when autoAssignProjects). Reject non-string-array input.
+      let selectedProjectIds: string[] | null = null;
+      if (projectIds != null) {
+        if (!Array.isArray(projectIds) || projectIds.some((id) => typeof id !== 'string')) {
+          return res.status(400).json({ error: 'projectIds must be an array of project ID strings' });
+        }
+        selectedProjectIds = projectIds;
+      }
 
       // Validate request payload
       const validation = validateInviteRequest({ email, projectRole });
@@ -69,15 +79,28 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
         });
       }
 
-      // Check if email is already a user
+      // Existing accounts CAN be invited (they log in and accept instead of
+      // signing up). Block only the cases where joining would be wrong:
+      // already on a team, their own paid account, or self.
       const { data: existingUser } = await supabase
         .from('users')
-        .select('id')
+        .select('id, account_owner_id, billing_mode, stripe_subscription_id')
         .eq('email', normalizedEmail)
         .single();
 
       if (existingUser) {
-        return res.status(400).json({ error: 'User already exists with this email' });
+        if (existingUser.id === userId) {
+          return res.status(400).json({ error: 'You cannot invite yourself' });
+        }
+        if (existingUser.account_owner_id) {
+          return res.status(400).json({ error: 'This person is already a member of a team' });
+        }
+        if (existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid') {
+          return res.status(400).json({
+            error: 'This person has their own paid Hopsworks account. They must close it before joining your team.'
+          });
+        }
+        // Standalone account with no paid billing → fine to invite.
       }
 
       // Check if there's already a pending invite
@@ -106,6 +129,7 @@ async function inviteHandler(req: NextApiRequest, res: NextApiResponse) {
           token_hash: tokenHash,
           project_role: role,
           auto_assign_projects: autoAssignProjects,
+          project_ids: selectedProjectIds,
           expires_at: calculateInviteExpiry().toISOString()
         })
         .select()
