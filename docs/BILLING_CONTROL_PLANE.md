@@ -88,7 +88,7 @@ What is metered, capped, and billed today, per resource:
 | GPU | n/a (no GPU nodes today) | n/a | n/a | future-proof only: a per-tier `nvidia.com/gpu` line, unset until GPU nodes exist |
 | Storage offline (HopsFS) | yes | no | yes | bridge sets a per-project HopsFS space quota via the admin API |
 | Storage online (RonDB) | yes, per project | yes (FSTORE-1819 / HWORKS-2421 / HWORKS-2866) | yes | bridge sets per-project limits from the plan; set `rondb_quotas` default |
-| Network egress | no | no | no | read OpenCost `networkTransferBytes`, then bill |
+| Network egress | yes (captured, not billed) | no | no | billing needs OpenCost network cost model to isolate real egress from intra-cluster |
 | Kafka | no | partial: topic count + cluster-wide rate | no | deferred, not billed (see Plan) |
 
 Notes that shape the plan:
@@ -113,12 +113,11 @@ Notes that shape the plan:
   free, a write-freeze stops growth but the existing stock keeps costing us, so the only real brake
   is a retention policy that deletes idle free-tier data after a set period. Without that policy, a
   free account that uploads then goes idle is a standing cost.
-- Egress is already per project: OpenCost is queried `aggregate=namespace`, and the allocation object
-  carries `networkTransferBytes` per namespace; the reconciler just doesn't read it yet. Optional
-  refinement: `networkTransferBytes` is total bytes out of pods, not internet egress specifically.
-  Billing the raw figure counts intra-cluster traffic too; isolating real egress needs OpenCost's
-  network cost model (network-costs daemonset + provider config), which can be added later. Decide
-  which subset to bill at implementation time.
+- Egress is per project and now captured: the metering reconciler reads `networkTransferBytes` per
+  namespace and stores `network_egress_gb` for visibility, but does not bill it. The raw figure is
+  total bytes out of pods, intra-cluster traffic included, so billing it directly would overcharge.
+  Isolating real internet egress needs OpenCost's network cost model (network-costs daemonset +
+  provider config); billing turns on once that is configured.
 
 ## Changes per repo
 
@@ -206,8 +205,10 @@ GPU nodes today, so it is wired future-proof and stays a no-op until GPU hardwar
 
 Bottom-up: meter correctly, make policy editable, then enforce. Each step is shippable on its own.
 
-1. Robust metering (watermark + backfill) and egress (read `networkTransferBytes`). Closes the silent
-   metering gaps. No user-facing change.
+1. Robust metering. Done: per-cluster watermark that alerts on missed hours, egress captured into
+   `network_egress_gb` (unbilled), and loud alerts on negative OpenCost reads (broken Prometheus
+   scrape) and unattributed namespace cost. Remaining: automatic backfill of missed hours, which
+   needs per-(namespace, hour) idempotency and validation against live OpenCost.
 2. Prices, plans, budgets, and policy in the DB with UI editors. Self-serve tuning, observe-only.
 3. Resolution + `applied_quota_tier`, bookkeeper reads it. Enforcement off raw billing_mode,
    behaviour-equivalent first.
