@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/check-data-integrity",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-billing",
+      "schedule": "*/30 * * * *"
     }
   ],
   "functions": {
@@ -28,6 +32,9 @@
       "maxDuration": 120
     },
     "src/pages/api/cron/check-data-integrity.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/cron/reconcile-billing.ts": {
       "maxDuration": 60
     }
   }

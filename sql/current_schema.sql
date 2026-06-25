@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
   stripe_subscription_id TEXT,
   stripe_subscription_status TEXT,
   downgrade_deadline TIMESTAMPTZ, -- Deadline to comply with free tier (delete projects)
+  enforcement_state TEXT NOT NULL DEFAULT 'normal' CHECK (enforcement_state IN ('normal', 'throttled', 'frozen')), -- budget axis
 
   -- Features
   is_admin BOOLEAN DEFAULT false,
@@ -110,6 +111,9 @@ CREATE TABLE IF NOT EXISTS user_projects (
   project_name TEXT NOT NULL,
   namespace TEXT NOT NULL,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  capacity_tier TEXT NOT NULL DEFAULT 'small' CHECK (capacity_tier IN ('small', 'medium', 'large', 'exempt')), -- per-project ceiling
+  applied_quota_tier TEXT CHECK (applied_quota_tier IN ('small', 'medium', 'large', 'exempt', 'throttled', 'frozen')), -- resolved tier the bookkeeper applies
+  quota_updated_at TIMESTAMPTZ,
   last_seen_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
