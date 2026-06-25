@@ -14,6 +14,7 @@ export interface ReconcileSummary {
   throttled: number;          // accounts currently throttled
   frozen: number;             // accounts currently frozen
   unresolved: number;         // accounts skipped because billing_mode is NULL (anomaly)
+  unresolvedAccounts: string[]; // their ids, for alerting (never silent)
 }
 
 function startOfMonthUtc(): string {
@@ -68,6 +69,7 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
     throttled: 0,
     frozen: 0,
     unresolved: 0,
+    unresolvedAccounts: [],
   };
 
   for (const owner of owners || []) {
@@ -79,6 +81,7 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
     // is an anomaly that needs resolving, not a free pass through every gate.
     if (!owner.billing_mode) {
       summary.unresolved++;
+      summary.unresolvedAccounts.push(owner.id);
       console.error(
         `[reconcile] ${owner.id}: NULL billing_mode with $${monthlyTotal.toFixed(2)} month-to-date; ` +
           `skipping enforcement, needs resolution`,
