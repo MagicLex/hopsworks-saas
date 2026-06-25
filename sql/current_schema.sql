@@ -227,6 +227,13 @@ CREATE TABLE IF NOT EXISTS stripe_products (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Metering watermark: last collection hour per cluster, to detect missed runs
+CREATE TABLE IF NOT EXISTS metering_watermark (
+  cluster_id UUID PRIMARY KEY REFERENCES hopsworks_clusters(id) ON DELETE CASCADE,
+  last_processed_hour TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- =====================================================
 -- INDEXES
 -- =====================================================

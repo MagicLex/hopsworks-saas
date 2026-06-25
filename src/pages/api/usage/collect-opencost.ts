@@ -238,6 +238,28 @@ async function collectOpenCostMetrics() {
       // Initialize OpenCost direct client for this cluster
       opencost = new OpenCostDirect(cluster.kubeconfig);
 
+      // Missed-hour detection: there is no backfill, so a skipped run loses that hour.
+      // Compare the per-cluster watermark to now and alert on any gap (lost revenue).
+      const currentHour = new Date(now);
+      currentHour.setUTCMinutes(0, 0, 0);
+      const { data: watermark } = await supabaseAdmin
+        .from('metering_watermark')
+        .select('last_processed_hour')
+        .eq('cluster_id', cluster.id)
+        .single();
+      if (watermark?.last_processed_hour) {
+        const last = new Date(watermark.last_processed_hour);
+        const gapHours = Math.round((currentHour.getTime() - last.getTime()) / 3_600_000);
+        if (gapHours > 1) {
+          const missed = gapHours - 1;
+          console.error(`[${cluster.name}] metering gap: ${missed} hour(s) missed since ${last.toISOString()}`);
+          await sendBillingAlert(
+            `:rotating_light: *OpenCost metering* — cluster ${cluster.name} missed ${missed} hour(s) of collection ` +
+              `(last ${last.toISOString()}, now ${currentHour.toISOString()}). That usage is not recovered.`,
+          );
+        }
+      }
+
       // Get hourly allocations from OpenCost using kubectl exec
       const allocations = await opencost.getOpenCostAllocations('1h');
 
@@ -780,6 +802,14 @@ async function collectOpenCostMetrics() {
         .eq('status', 'active');
 
       console.log(`[${cluster.name}] Collection completed: ${clusterResults.successful} successful, ${clusterResults.failed} failed`);
+
+      // Advance the watermark to this hour so the next run can detect a gap.
+      await supabaseAdmin
+        .from('metering_watermark')
+        .upsert(
+          { cluster_id: cluster.id, last_processed_hour: currentHour.toISOString(), updated_at: nowIso },
+          { onConflict: 'cluster_id' },
+        );
 
       // Aggregate cluster results
       aggregatedResults.successful += clusterResults.successful;
