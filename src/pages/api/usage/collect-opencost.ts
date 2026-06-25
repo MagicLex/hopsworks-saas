@@ -23,6 +23,7 @@ type ProjectBreakdownEntry = {
     ramGBHours: number;
     onlineStorageGB: number;
     offlineStorageGB: number;
+    networkEgressGB?: number;
     hourlyCost: number;
     processedAt: string;
   };
@@ -420,7 +421,13 @@ async function collectOpenCostMetrics() {
       const offlineStorageGB = offlineStorageBytes / (1024 * 1024 * 1024);
       const onlineStorageGB = onlineStorageBytes / (1024 * 1024 * 1024);
 
-      // Calculate cost using our rates
+      // Network egress: captured for visibility only, NOT billed. networkTransferBytes
+      // is gross pod egress and includes intra-cluster traffic; billing it raw would
+      // overcharge. Real egress billing needs OpenCost's network cost model (infra).
+      const networkEgressGB = Math.max(0, (allocation.networkTransferBytes || 0) / (1024 * 1024 * 1024));
+
+      // Calculate cost using our rates. Storage is pro-rated; egress is deliberately
+      // excluded until the network cost model isolates real egress.
       const creditsUsed = calculateCreditsUsed({
         cpuHours,
         gpuHours,
@@ -447,6 +454,7 @@ async function collectOpenCostMetrics() {
       let totalCpuHours = existingUsage?.opencost_cpu_hours || 0;
       let totalGpuHours = existingUsage?.opencost_gpu_hours || 0;
       let totalRamGbHours = existingUsage?.opencost_ram_gb_hours || 0;
+      let totalNetworkEgressGb = existingUsage?.network_egress_gb || 0;
       let totalCredits = existingUsage?.total_credits || 0;
       let totalCost = existingUsage?.total_cost || 0;
 
@@ -454,6 +462,7 @@ async function collectOpenCostMetrics() {
         totalCpuHours = Math.max(0, totalCpuHours - (previousContribution.cpuHours || 0));
         totalGpuHours = Math.max(0, totalGpuHours - (previousContribution.gpuHours || 0));
         totalRamGbHours = Math.max(0, totalRamGbHours - (previousContribution.ramGBHours || 0));
+        totalNetworkEgressGb = Math.max(0, totalNetworkEgressGb - (previousContribution.networkEgressGB || 0));
         const previousHourlyCost =
           previousContribution.hourlyCost || computeHourlyCost(previousContribution);
         totalCost = Math.max(0, totalCost - previousHourlyCost);
@@ -481,6 +490,7 @@ async function collectOpenCostMetrics() {
           ramGBHours,
           onlineStorageGB,
           offlineStorageGB,
+          networkEgressGB,
           hourlyCost: hourlyTotalCost,
           processedAt: nowIso
         }
@@ -496,6 +506,7 @@ async function collectOpenCostMetrics() {
         opencost_ram_gb_hours: totalRamGbHours + ramGBHours,
         online_storage_gb: storageTotals.online,
         offline_storage_gb: storageTotals.offline,
+        network_egress_gb: totalNetworkEgressGb + networkEgressGB,
         total_credits: totalCredits + hourlyTotalCredits,
         total_cost: totalCost + hourlyTotalCost,
         project_breakdown: breakdown,
