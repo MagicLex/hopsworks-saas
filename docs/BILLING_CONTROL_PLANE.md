@@ -228,9 +228,6 @@ Bottom-up: meter correctly, make policy editable, then enforce. Each step is shi
 - `NULL` billing_mode accounts must not fall through. The reconciler skips them, counts them
   unresolved, and Slack-alerts; the bookkeeper fails closed to `frozen` on an unknown
   `applied_quota_tier`.
-- Free accounts have no nudge yet: the spending-cap alert only emails accounts with an explicit cap,
-  so a free account can hit the $10 freeze with no 80/90% warning. Wire nudges to the free default
-  budget.
 - Storage cost survives compute enforcement and suspension; only deletion reclaims it. Paid: it
   bills, they pay, no action needed. Free: write-freeze caps growth, but idle stored data keeps
   costing us until a retention policy reclaims it. That policy is the only brake on free-tier storage
