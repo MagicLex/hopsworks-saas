@@ -19,7 +19,7 @@ minimal changes to Hopsworks itself.
             ┌──── quotas-bookkeeper (hopsworks-as-a-service, in-cluster, every 5m) ─┐
             │ reads the desired field ──► PATCH namespace label ──► Kyverno quota   │
             └───────────────────────────────────────────────────────────────────────┘
-            bridge also drives, via the admin API: per-project HopsFS + RonDB storage quotas, maxNumProjects, user status, computeState, Stripe
+            bridge also drives, via the admin API: per-project HopsFS + RonDB storage quotas, maxNumProjects, user status, Stripe
 ```
 
 - **Bridge** owns policy: it meters usage, prices it, computes the desired state, and writes it to
@@ -36,35 +36,47 @@ hourly, 15d daily), so a missed tick self-heals. State changes ride the webhook 
 
 ## Enforcement model
 
-Two independent axes, resolved into one applied value:
+Two independent axes, resolved into one applied value the bookkeeper reads.
 
-- **Capacity** (`capacity_tier`: small / medium / large / exempt): the compute ceiling a project may
-  request. small→medium is self-serve; large and exempt are sales-gated, so nobody jumps to 100+
-  cores without a conversation.
+- **Capacity** (`capacity_tier`): the compute ceiling a project is entitled to. Under pay-as-you-go it
+  is binary: `small` (free accounts, capped because they do not pay) and `exempt` (paying accounts,
+  no cap because usage is billed). `medium` and `large` exist in the schema as reserved hooks for a
+  future fixed-price capped plan; they are not assigned today.
 - **Budget** (`enforcement_state`: normal / throttled / frozen): derived from month-to-date recorded
-  cost vs the account budget. Free accounts get a default budget; paying accounts have none and stay
-  `normal` unless a self-set cap bites.
+  cost vs the account budget. Free accounts get a default budget ($10/month); paying accounts have
+  none and stay `normal` unless a self-set cap (`spending_cap`) bites.
+
+The bridge folds the two axes into one field:
 
 ```
-applied_quota_tier = frozen        if budget exceeded
-                   = throttled     if budget reached
-                   = capacity_tier otherwise
+applied_quota_tier = frozen        if enforcement_state = frozen
+                   = throttled     if enforcement_state = throttled
+                   = capacity_tier otherwise   (small | exempt)
 ```
 
-The bridge writes `applied_quota_tier`; the bookkeeper applies it. Ladder, all reversible by writing
-one field; suspend is reserved for abuse and non-payment, never for budget:
+The bookkeeper reads only `applied_quota_tier` and maps it to a ResourceQuota; it never sees the two
+input axes. Live values: `small`, `exempt`, `throttled`, `frozen`. An unknown or NULL value is not a
+state: the bookkeeper fails closed to `frozen`. The bridge guarantees a valid value (NOT NULL column,
+reconciler bootstrap) and Slack-alerts when it cannot resolve an account, so a missing value only
+ever means an upstream bug we already know about. Fail closed, never a silent skip, never a silent
+unlimited.
+
+Every transition is reversible by writing one field. Suspend is reserved for abuse and non-payment:
+never for budget, and never for the free project limit (that limit is gated by `maxNumProjects`, not
+by deactivating the account):
 
 | Step | Trigger | Effect |
 |---|---|---|
-| Normal | cost < budget | quota = capacity_tier |
-| Nudge | 80/90% of budget | email + in-app banner |
-| Throttle | budget reached | quota shrinks to a few cores |
-| Freeze | budget exceeded | `requests.cpu: 0`, new pods rejected, running work drains |
+| Normal | cost < 80% of budget | quota = capacity_tier (small or exempt) |
+| Nudge | 80% of budget | email + billing-dashboard banner |
+| Throttle | 90% of budget | quota shrinks to a few cores, email |
+| Freeze | budget reached (100%) | `requests.cpu: 0`, new pods rejected, running work drains |
 | Suspend | non-payment or abuse | account deactivated (admin API + Stripe) |
 
-Throttle and freeze are Kubernetes quota changes the Hopsworks app cannot see, so a user hits a raw
-`exceeded quota` error. A generic per-user `computeState` (set by the bridge, shown as a banner)
-makes the reason visible without suspending the account.
+Throttle and freeze are Kubernetes quota changes the Hopsworks app cannot see, so a user working
+inside Hopsworks hits a raw `exceeded quota` error. The bridge owns the reason: the billing dashboard
+shows the account's enforcement state and why (budget reached, cap hit) and sends the nudge email. No
+Hopsworks-side signal is required.
 
 ## Coverage
 
@@ -111,15 +123,17 @@ Notes that shape the plan:
 ## Changes per repo
 
 **hopsworks-as-a-service / quotas-bookkeeper** (small): read `applied_quota_tier` from Supabase
-instead of branching on raw billing_mode; add `throttled` and `frozen` Kyverno tier policies; wire a
-per-tier `nvidia.com/gpu` line into the quota template (future-proof, no-op until GPU nodes exist);
-treat unknown/NULL as an error, not a silent skip. SA, RBAC,
-cronjob, and deploy pipeline already exist. Storage quotas (HopsFS offline, RonDB online) do not
-touch the bookkeeper: the bridge sets them through the admin API.
+instead of branching on raw billing_mode; add the `small`, `throttled`, and `frozen` Kyverno tier
+policies (`small` equals today's default tier, 6 CPU / 30Gi; `exempt` is the existing no-quota path);
+wire a per-tier `nvidia.com/gpu` line into the quota template (future-proof, no-op until GPU nodes
+exist); map an unknown or NULL `applied_quota_tier` to `frozen` (fail closed). SA, RBAC, cronjob, and
+deploy pipeline already exist. Storage quotas (HopsFS offline, RonDB online) do not touch the
+bookkeeper: the bridge sets them through the admin API.
 
-The only net-new artifact in-cluster is the two Kyverno tier policies (`throttled`, `frozen`). The
-label-patch plumbing and the label→ResourceQuota expansion already exist; the bookkeeper change is a
-one-field swap (`billing_mode` → `applied_quota_tier`) plus the NULL guard. Kyverno is mandatory
+The net-new artifacts in-cluster are three Kyverno tier policies (`small`, `throttled`, `frozen`).
+The label-patch plumbing and the label→ResourceQuota expansion already exist; the bookkeeper change
+is a one-field swap (`billing_mode` → `applied_quota_tier`) plus the fail-closed default. Kyverno is
+mandatory
 here: Hopsworks never writes a ResourceQuota (its admin kube API only sets namespace labels and
 priority classes and reads the quota back, `KubeClientService` has no quota write), so something
 in-cluster must materialise label→quota, and that is Kyverno.
@@ -133,12 +147,12 @@ leak (a frozen account silently un-freezing). A push would also couple enforceme
 uptime and route it across the internet from an out-of-cluster bridge. Reconciliation in-cluster is
 the SOTA shape and the robust one; the only worthwhile future upgrade is cron → watch, not deletion.
 
-**hopsworks-ee**: the primitives scoped in *Required Hopsworks primitives* below. The online-storage
-cap is merged to ee master (FSTORE-1819 / HWORKS-2421 / HWORKS-2866); the bridge drives it, no
-building needed. The Kafka cluster-wide rate quota is merged to helm `main` (HWORKS-2632, default
-off); per-project Kafka rate, size, and accounting are deferred upstream work. `computeState` is still to build for the compute throttle/freeze case, though online
-over-quota visibility already ships as a banner. No usage events from EE; usage stays a bridge-side
-integral.
+**hopsworks-ee**: nothing to build for enforcement. The online-storage cap is merged to ee master
+(FSTORE-1819 / HWORKS-2421 / HWORKS-2866) and the bridge drives it. The Kafka cluster-wide rate quota
+is merged to helm `main` (HWORKS-2632, default off); per-project Kafka is deferred. The one
+integration the bridge depends on is the lifecycle webhook (PR #2992). No usage events from EE; usage
+stays a bridge-side integral. Throttle/freeze visibility is bridge-side (billing dashboard), so the
+Hopsworks app needs no signal for it.
 
 **hopsworks-saas** (the bulk):
 
@@ -147,27 +161,25 @@ integral.
   `enforcement_state` / `applied_quota_tier`, `metering_watermark`.
 - Metering reconciler: watermark + backfill, idempotent per `(namespace, hour)`; read
   `networkTransferBytes` to fill egress.
-- State resolution: compute `enforcement_state` from budget, resolve `applied_quota_tier`, set
-  `computeState` on throttle/freeze.
-- Capacity upgrades: self-serve small→medium; large/exempt go through an approval queue.
+- State resolution: compute `enforcement_state` from budget, resolve `applied_quota_tier`. A cron
+  reconciler sweeps every active account, idempotent, self-healing (re-asserts state each run, lifts
+  freezes on month rollover), and Slack-alerts accounts it cannot resolve (NULL billing_mode).
+- Billing transitions: `small` (free) / `exempt` (paying) capacity, free project limit gated by
+  `maxNumProjects`, never by account suspension. `medium`/`large` reserved for a future fixed-price
+  plan, not wired.
 - Promote the lifecycle webhook receiver to master and retire the project-sync poll.
 - Admin UI: capacity, budget, enforcement state, and live quota per account; price/plan/budget
-  editors; approval and enforcement queues.
+  editors; enforcement queue. The billing dashboard surfaces throttle/freeze and the reason to the
+  user.
 
 ## Required Hopsworks primitives
 
-The only changes that must land in Hopsworks itself. Each is generic, with no SaaS tier or billing
-logic in Hopsworks: the bridge supplies the values, Hopsworks enforces and exposes.
+Hopsworks needs nothing built for compute enforcement: the quota lives in Kubernetes (Kyverno) and
+the reason is surfaced by the bridge dashboard, not by the Hopsworks app. The storage primitive below
+is already merged; Kafka is deferred. Each is generic, with no SaaS tier or billing logic in
+Hopsworks: the bridge supplies the values, Hopsworks enforces and exposes.
 
-1. **Per-user compute-state signal** (small, to build). A per-user `computeState` field (enum
-   `normal` / `throttled` / `frozen` + optional message), settable via `PUT /admin/users/{id}` and
-   returned by `authenticationStatus`, so the UI shows a banner. Closes the visibility gap on the
-   compute axis: a quota-throttled user reads a clear reason instead of an opaque `exceeded quota`.
-   The bridge sets the value and message. Note the online (RonDB) over-quota case already has its own
-   banner (HWORKS-2866); this primitive covers the Kubernetes-quota throttle/freeze the Hopsworks app
-   cannot otherwise see.
-
-2. **Per-project online (RonDB) storage limit** (merged to ee master, bridge-driven). Delivered
+1. **Per-project online (RonDB) storage limit** (merged to ee master, bridge-driven). Delivered
    across FSTORE-1819 (the `rate_per_sec` rate-limit primitive), HWORKS-2421 (feature flag), and
    HWORKS-2866 (project-creation defaults plus usage exposure): RonDB has native per-database quotas
    (`in_memory_size`, `on_disk_size`, `rate_per_sec` and more), enforced by RonDB itself, set per
@@ -178,7 +190,7 @@ logic in Hopsworks: the bridge supplies the values, Hopsworks enforces and expos
    `rondb_quotas` default and push a per-project write-freeze limit only on budget breach or
    non-payment.
 
-3. **Kafka per-project rate/size/accounting** (deferred, not billed). Topic count is already capped
+2. **Kafka per-project rate/size/accounting** (deferred, not billed). Topic count is already capped
    and a cluster-wide byte-rate quota ships off by default (HWORKS-2632, helm `main`). Per-project
    differentiation, `retention.bytes`, and per-project byte accounting are future work, scoped only if
    Kafka usage proves material.
@@ -199,9 +211,9 @@ Bottom-up: meter correctly, make policy editable, then enforce. Each step is shi
 2. Prices, plans, budgets, and policy in the DB with UI editors. Self-serve tuning, observe-only.
 3. Resolution + `applied_quota_tier`, bookkeeper reads it. Enforcement off raw billing_mode,
    behaviour-equivalent first.
-4. Budget enforcement: throttled/frozen tiers, GPU cap (future-proof, no GPU nodes today),
-   `computeState`, the ladder. Nudge first,
-   freeze behind confirm, suspend abuse-only.
+4. Budget enforcement: `small`/`throttled`/`frozen` tiers, GPU cap (future-proof, no GPU nodes
+   today), the ladder, unknown tier fails closed to `frozen`. Nudge first, freeze behind confirm,
+   suspend abuse-only. Visibility on the billing dashboard, no Hopsworks-app signal.
 5. Storage breakers (budget/non-payment only): HopsFS space quota and RonDB per-project limit, both
    set as a write-freeze at current usage via the admin API. RonDB primitive is in ee master; bridge
    sets the `rondb_quotas` default and pushes the per-project limit. Generous default, not a routine
@@ -213,7 +225,12 @@ Bottom-up: meter correctly, make policy editable, then enforce. Each step is shi
 
 ## Open risks (billing)
 
-- `NULL` billing_mode accounts fall through every gate; resolution must treat NULL as an error.
+- `NULL` billing_mode accounts must not fall through. The reconciler skips them, counts them
+  unresolved, and Slack-alerts; the bookkeeper fails closed to `frozen` on an unknown
+  `applied_quota_tier`.
+- Free accounts have no nudge yet: the spending-cap alert only emails accounts with an explicit cap,
+  so a free account can hit the $10 freeze with no 80/90% warning. Wire nudges to the free default
+  budget.
 - Storage cost survives compute enforcement and suspension; only deletion reclaims it. Paid: it
   bills, they pay, no action needed. Free: write-freeze caps growth, but idle stored data keeps
   costing us until a retention policy reclaims it. That policy is the only brake on free-tier storage
