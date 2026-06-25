@@ -121,15 +121,20 @@ async function sendSpendingAlert(
   const resend = new Resend(process.env.RESEND_API_KEY);
   const dashboardUrl = `${process.env.AUTH0_BASE_URL}/dashboard?tab=billing`;
 
-  const isOverCap = threshold >= 100;
-  const subject = isOverCap
-    ? `Spending Alert: Your $${user.spending_cap} monthly cap has been exceeded`
-    : `Spending Alert: You've reached ${threshold}% of your $${user.spending_cap} monthly cap`;
+  const isFrozen = threshold >= 100;
+  const isThrottled = threshold >= 90 && threshold < 100;
+  const subject = isFrozen
+    ? `Spending cap reached: compute frozen on your account`
+    : isThrottled
+      ? `90% of your spending cap: compute throttled`
+      : `You've reached ${threshold}% of your $${user.spending_cap} monthly cap`;
 
-  const statusColor = isOverCap ? '#dc2626' : threshold >= 90 ? '#f59e0b' : '#1eb182';
-  const statusText = isOverCap
-    ? 'Your spending has exceeded your monthly cap. Your services will continue running.'
-    : `You've used ${threshold}% of your monthly spending cap.`;
+  const statusColor = isFrozen ? '#dc2626' : isThrottled ? '#f59e0b' : '#1eb182';
+  const statusText = isFrozen
+    ? 'Your spend has reached your monthly cap. Compute on your account is now frozen: running work drains and new workloads are rejected until your usage resets next cycle or you raise the cap. Stored data is not deleted and keeps billing.'
+    : isThrottled
+      ? 'You have reached 90% of your monthly cap. Compute on your account is now throttled to a minimum until your spend drops or you raise the cap.'
+      : `You've used ${threshold}% of your monthly spending cap. Compute is throttled at 90% and frozen at 100%.`;
 
   try {
     await resend.emails.send({
@@ -165,10 +170,9 @@ async function sendSpendingAlert(
             </table>
           </div>
 
-          ${isOverCap ? `
-          <p style="color: #666; line-height: 1.6; background-color: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid #dc2626;">
-            <strong>Note:</strong> Your services will continue running. This is a soft cap for awareness.
-            You can adjust your cap or disable it in your dashboard.
+          ${isFrozen || isThrottled ? `
+          <p style="color: #666; line-height: 1.6; background-color: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid ${statusColor};">
+            <strong>Note:</strong> This cap enforces compute limits. Raise or disable it in your dashboard to restore full capacity. Stored data keeps billing until you remove it.
           </p>
           ` : ''}
 

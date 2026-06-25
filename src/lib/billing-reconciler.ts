@@ -13,6 +13,7 @@ export interface ReconcileSummary {
   tierChanges: number;        // projects whose applied_quota_tier changed
   throttled: number;          // accounts currently throttled
   frozen: number;             // accounts currently frozen
+  unresolved: number;         // accounts skipped because billing_mode is NULL (anomaly)
 }
 
 function startOfMonthUtc(): string {
@@ -66,11 +67,25 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
     tierChanges: 0,
     throttled: 0,
     frozen: 0,
+    unresolved: 0,
   };
 
   for (const owner of owners || []) {
     summary.accountsEvaluated++;
     const monthlyTotal = mtd.get(owner.id) || 0;
+
+    // NULL billing_mode must never silently resolve to 'normal' (unlimited). A
+    // limbo account has no cluster and no projects; a NULL one with recorded cost
+    // is an anomaly that needs resolving, not a free pass through every gate.
+    if (!owner.billing_mode) {
+      summary.unresolved++;
+      console.error(
+        `[reconcile] ${owner.id}: NULL billing_mode with $${monthlyTotal.toFixed(2)} month-to-date; ` +
+          `skipping enforcement, needs resolution`,
+      );
+      continue;
+    }
+
     const budget = effectiveBudgetUsd(owner.billing_mode, owner.spending_cap);
     const state: EnforcementState = computeEnforcementState(monthlyTotal, budget);
     if (state === 'frozen') summary.frozen++;
