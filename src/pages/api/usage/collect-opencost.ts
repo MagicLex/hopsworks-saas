@@ -56,6 +56,18 @@ const supabaseAdmin = createClient(
   }
 );
 
+// Surface billing-impacting anomalies loudly. Silent drops and zeroed usage are lost
+// revenue: a broken Prometheus scrape zeroes everyone, so it must page, not just log.
+async function sendBillingAlert(text: string) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+  if (!webhookUrl) return;
+  await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch(err => console.error('[collect-opencost] Slack alert failed:', err));
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireCronAuth(req, res)) return;
 
@@ -210,7 +222,10 @@ async function collectOpenCostMetrics() {
     failed: 0,
     errors: [] as string[],
     namespaces: [] as any[],
-    clusters: [] as any[]
+    clusters: [] as any[],
+    unattributedCost: 0,
+    unattributedNamespaces: [] as string[],
+    negativeNamespaces: [] as string[]
   };
 
   // Process each cluster
@@ -343,15 +358,13 @@ async function collectOpenCostMetrics() {
       }
 
       if (!userId) {
-        // Try to identify what type of namespace this is
-        let namespaceType = 'user project';
-        if (namespace.includes('admin') || namespace === 'hopsworks') {
-          namespaceType = 'admin/system';
-        }
-        
-        console.warn(`[${cluster.name}] No user found for namespace ${namespace} (type: ${namespaceType})`);
-        clusterResults.errors.push(`Namespace ${namespace}: No user mapping found`);
+        // Unmapped namespace with real cost is dropped revenue, not a silent skip.
+        const droppedCost = allocation.totalCost || 0;
+        console.warn(`[${cluster.name}] No user found for namespace ${namespace}: $${droppedCost.toFixed(4)} unattributed`);
+        clusterResults.errors.push(`Namespace ${namespace}: No user mapping found ($${droppedCost.toFixed(4)} dropped)`);
         clusterResults.failed++;
+        aggregatedResults.unattributedCost += droppedCost;
+        aggregatedResults.unattributedNamespaces.push(`${cluster.name}/${namespace}`);
         continue;
       }
 
@@ -371,6 +384,7 @@ async function collectOpenCostMetrics() {
           fix: 'Add prometheus.io/scrape annotation to OpenCost service or add opencost job to Prometheus scrape_configs'
         });
         clusterResults.errors.push(`Namespace ${namespace}: OpenCost returned negative values (Prometheus scrape misconfiguration)`);
+        aggregatedResults.negativeNamespaces.push(`${cluster.name}/${namespace}`);
       }
 
       // Sanitize to prevent data corruption while issue is being fixed
@@ -797,6 +811,21 @@ async function collectOpenCostMetrics() {
         await opencost.cleanup();
       }
     }
+  }
+
+  // Loud alert on billing-impacting anomalies this run, so they cannot pass silently.
+  if (aggregatedResults.negativeNamespaces.length > 0) {
+    await sendBillingAlert(
+      `:rotating_light: *OpenCost metering* — ${aggregatedResults.negativeNamespaces.length} namespace(s) returned NEGATIVE values ` +
+        `(Prometheus scrape likely broken, usage zeroed): ${aggregatedResults.negativeNamespaces.slice(0, 10).join(', ')}`,
+    );
+  }
+  if (aggregatedResults.unattributedCost > 0.01) {
+    await sendBillingAlert(
+      `:warning: *OpenCost metering* — $${aggregatedResults.unattributedCost.toFixed(2)} of cost could not be attributed to any ` +
+        `account and was dropped (${aggregatedResults.unattributedNamespaces.length} namespace(s): ` +
+        `${aggregatedResults.unattributedNamespaces.slice(0, 10).join(', ')})`,
+    );
   }
 
   // Check spending caps for all users who had usage processed
