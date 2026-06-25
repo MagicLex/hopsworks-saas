@@ -1,14 +1,34 @@
 # TODO
 
-Last updated: 2026-05-08.
+Last updated: 2026-06-25.
 
 Working board. "Shipped" lives in `git log`, not here. Items rot fast: anything older than ~30 days, prune or escalate.
 
 ## In progress
 
-_(none right now)_
+### Metering backfill auto-recovery (#4, branch `billing-backfill` off `billing-update`)
+
+The `billing-update` PR ships missed-hour *detection* (per-cluster `metering_watermark` + Slack alert). Auto-recovery is the remaining piece, isolated on its own branch because it rewrites billing-critical accumulation and must be validated against live OpenCost.
+
+- [ ] Switch `collect-opencost` from "current in-progress hour" to "completed hours": at run time, process every completed hour in `(watermark, now]`, each with its own `window=${hourStart},${hourEnd}` and attributed to *its* date (so a gap across midnight does not land on the wrong day/month).
+- [ ] Replace the intra-hour dedup (`isSameUtcHour`) with per-`(namespace, hour)` idempotency, keyed on the processed hour stamp stored in `project_breakdown`, so a failed watermark write cannot double-count.
+- [ ] Storage snapshot stays current (no history); apply it per processed hour.
+- [ ] Extract the accumulation into a pure function and unit-test (vitest) the idempotency and multi-hour math.
+- [ ] STAGING VALIDATION (cannot be done locally, clusters unreachable): confirm `getOpenCostAllocations('${iso},${iso}')` (range window) works and returns the same shape as `window=1h`. Deploy to a Vercel preview hitting the staging cluster, run, check `usage_daily` deltas vs raw OpenCost.
+- [ ] Accept the ~1h reporting delay (usage appears after the hour completes) as the cost of exactly-once + backfill.
 
 ## Next
+
+### Billing control plane (PR `billing-update`, lands with the lifecycle-webhook PR)
+
+- [ ] **Verify Stripe meter config** before trusting the storage fix: confirm `compute_credits` is priced at $0.35/credit and `storage_online_gb` / `storage_offline_gb` exist at $0.50 / $0.03. The code now sends compute-only credits + the storage meters; if the dashboard differs, storage billing is wrong.
+- [ ] **Retroactive storage refund/credit**: storage was double-billed historically (credits included storage AND the storage meters fired). Quantify and credit affected paying accounts.
+- [ ] **Coordinate the bookkeeper switch with Antonis** (hopsworks-as-a-service): read `applied_quota_tier`; add `small` (= current default, 6 CPU), `throttled`, `frozen` Kyverno policies; unknown/NULL → `frozen` (fail closed). `exempt` is the existing path. Inert until he ships.
+- [ ] **Egress billing** (#3): captured as `network_egress_gb` (unbilled). To bill, configure OpenCost's network cost model (network-costs daemonset + OVH provider config) to isolate real internet egress from intra-cluster; billing the raw figure overcharges.
+- [ ] **Prepaid**: kept manual (corporate invoice). Monthly `report-prepaid-usage` cron Slacks last month's usage. Revisit only if it should be automated.
+- [ ] Apply migrations on each environment that needs them: `sql/012_billing_enforcement.sql`, `sql/013_metering_watermark.sql` (already applied to prod 2026-06-25).
+
+### Billing chain hardening (closes INVARIANT I-14)
 
 ### Billing chain hardening (closes INVARIANT I-14)
 
