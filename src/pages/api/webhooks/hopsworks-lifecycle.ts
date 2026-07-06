@@ -314,12 +314,16 @@ async function handleProjectCreated(payload: LifecyclePayload) {
     return;
   }
 
+  // The event carries the Hopsworks project name only. Derive the K8s namespace
+  // OpenCost reports against: lowercase, underscores become hyphens (I-11).
+  const namespace = name.toLowerCase().replace(/_/g, '-');
+
   const { error: upsertErr } = await supabaseAdmin.from('user_projects').upsert(
     {
       user_id: owner.id,
       project_id: projectId,
       project_name: name,
-      namespace: name,
+      namespace,
       status: isActive ? 'active' : 'inactive',
       last_seen_at: new Date().toISOString(),
     },
