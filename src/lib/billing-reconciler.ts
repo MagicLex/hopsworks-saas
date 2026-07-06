@@ -3,6 +3,7 @@ import {
   effectiveBudgetUsd,
   computeEnforcementState,
   resolveAppliedTier,
+  capacityForBillingMode,
   CapacityTier,
   EnforcementState,
 } from '../config/enforcement';
@@ -167,23 +168,33 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
       );
     }
 
-    // Resolve applied_quota_tier per active project of this account.
+    // Resolve capacity and applied_quota_tier per active project of this account.
+    // Capacity derives from billing_mode (webhook-created projects default to
+    // 'small' regardless of the owner's plan, and up/downgrades must propagate);
+    // medium/large are manual overrides for future fixed-price plans, left alone.
+    const derivedCapacity = capacityForBillingMode(owner.billing_mode);
     const projects = projectsByOwner.get(owner.id) || [];
 
     for (const p of projects) {
-      const capacity: CapacityTier = (p.capacity_tier as CapacityTier) || 'small';
+      const current: CapacityTier = (p.capacity_tier as CapacityTier) || 'small';
+      const capacity: CapacityTier =
+        current === 'medium' || current === 'large' ? current : derivedCapacity;
       const applied = resolveAppliedTier(capacity, state);
-      if (applied !== p.applied_quota_tier) {
+      if (applied !== p.applied_quota_tier || capacity !== p.capacity_tier) {
         const { error: tErr } = await supabase
           .from('user_projects')
-          .update({ applied_quota_tier: applied, quota_updated_at: new Date().toISOString() })
+          .update({
+            capacity_tier: capacity,
+            applied_quota_tier: applied,
+            quota_updated_at: new Date().toISOString(),
+          })
           .eq('id', p.id);
         if (tErr) {
           console.error(`[reconcile] ${p.namespace}: failed to set applied_quota_tier: ${tErr.message}`);
           continue;
         }
         summary.tierChanges++;
-        console.log(`[reconcile] ${p.namespace}: ${p.applied_quota_tier} -> ${applied}`);
+        console.log(`[reconcile] ${p.namespace}: ${p.applied_quota_tier} -> ${applied} (capacity ${capacity})`);
       }
     }
   }

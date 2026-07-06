@@ -26,6 +26,13 @@ export function effectiveBudgetUsd(
   return spendingCap && spendingCap > 0 ? spendingCap : null;
 }
 
+// Capacity axis: paying accounts are exempt (usage is billed), free accounts are
+// capped at small. medium/large are reserved for future fixed-price plans and are
+// only ever set manually, so deriving small/exempt must never overwrite them.
+export function capacityForBillingMode(billingMode: string | null | undefined): 'small' | 'exempt' {
+  return billingMode === 'postpaid' || billingMode === 'prepaid' ? 'exempt' : 'small';
+}
+
 // Budget axis: month-to-date recorded cost vs the account budget.
 export function computeEnforcementState(
   monthToDateUsd: number,
