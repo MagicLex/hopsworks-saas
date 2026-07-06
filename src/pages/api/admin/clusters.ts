@@ -8,13 +8,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Never ship api_key / kubeconfig / mysql_password to the browser, admin or not.
+const CLUSTER_PUBLIC_COLUMNS =
+  'id, name, api_url, max_users, current_users, status, environment, region, metadata, created_at, updated_at';
+
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
     try {
       const { data: clusters, error } = await supabase
         .from('hopsworks_clusters')
         .select(`
-          *,
+          ${CLUSTER_PUBLIC_COLUMNS},
           user_hopsworks_assignments (count)
         `)
         .order('created_at', { ascending: false });
@@ -48,7 +52,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           current_users: 0,
           status: 'active'
         })
-        .select()
+        .select(CLUSTER_PUBLIC_COLUMNS)
         .single();
 
       if (error) {
@@ -68,7 +72,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         .from('hopsworks_clusters')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select(CLUSTER_PUBLIC_COLUMNS)
         .single();
 
       if (error) {

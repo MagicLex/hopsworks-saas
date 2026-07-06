@@ -101,8 +101,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }));
         console.log(`Found ${projects.length} team projects for ${userData.email}`);
       } else {
-        // Use our user_projects table (synced by project-sync on every login).
-        // Hopsworks API returns deleted projects as if active — our DB is the source of truth.
+        // Use our user_projects table (kept current by the lifecycle webhook receiver,
+        // plus on-demand syncUserProjects before billing decisions).
         const { data: userProjects } = await supabaseAdmin
           .from('user_projects')
           .select('project_id, project_name')

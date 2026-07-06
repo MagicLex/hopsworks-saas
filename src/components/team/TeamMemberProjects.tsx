@@ -7,11 +7,7 @@ interface ProjectRole {
 }
 
 interface TeamMemberProjectsProps {
-  memberId: string;
-  memberEmail: string;
-  memberName: string;
   hopsworksUsername?: string;
-  clusterUrl?: string;
   projects?: ProjectRole[];
   /** Owner-only: remove the member from one project. Renders an X on each chip. */
   onRemoveProject?: (projectName: string) => void;
@@ -43,7 +39,7 @@ export default function TeamMemberProjects({
         ) : (
           <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-quartz-label-yellow-shade2 text-quartz-label-orange">
             <AlertCircle size={12} />
-            Syncing to Hopsworks...
+            Pending first Hopsworks login
           </span>
         )}
       </div>

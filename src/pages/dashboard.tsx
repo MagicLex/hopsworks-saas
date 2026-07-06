@@ -65,8 +65,6 @@ interface UsageData {
   gpuHours: number;
   ramGbHours?: number;
   storageGB: number;
-  featureGroups: number;
-  modelDeployments: number;
   lastUpdate?: string;
   projectBreakdown?: Record<string, {
     cpuHours: number;
@@ -362,6 +360,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error upgrading to postpaid:', error);
+      toast.error('Failed to start the upgrade. Please try again.');
       setUpgradingToPostpaid(false);
     }
   };
@@ -503,6 +502,7 @@ export default function Dashboard() {
       await fetchInvites();
     } catch (error) {
       console.error('Error canceling invite:', error);
+      toast.error('Failed to cancel invite. Please try again.');
     }
   };
 
@@ -742,57 +742,11 @@ export default function Dashboard() {
                                 billingMode: billing?.billingMode,
                               });
 
-                              // Redirect to auto-OAuth URL for automatic login with Auth0
+                              // Auto-OAuth login: the cluster creates the Hopsworks
+                              // user on first login; the user.created lifecycle
+                              // webhook links it back to the SaaS account.
                               const autoOAuthUrl = `${instance.endpoint}/autoOAuth?providerName=Auth0`;
                               window.open(autoOAuthUrl, '_blank');
-
-                              // Only trigger sync if user needs it (missing Hopsworks info or payment but no projects)
-                              const needsSync = !hopsworksInfo?.hopsworksUser ||
-                                              (billing?.hasPaymentMethod && (!hopsworksInfo?.projects || hopsworksInfo.projects.length === 0));
-
-                              if (needsSync) {
-                                // Start retrying after 2s with exponential backoff
-                                let retryCount = 0;
-                                const maxRetries = 5;
-                                const baseDelay = 2000; // 2 seconds base
-
-                                const attemptSync = async () => {
-                                  try {
-                                    const response = await fetch('/api/auth/sync-user', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({})
-                                    });
-
-                                    if (response.ok) {
-                                      console.log('Successfully synced user after Hopsworks access');
-                                      return;
-                                    }
-
-                                    // If not OK, maybe retry
-                                    if (retryCount < maxRetries) {
-                                      retryCount++;
-                                      const delay = baseDelay * Math.pow(2, retryCount - 1); // Exponential backoff
-                                      console.log(`Sync failed, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
-                                      setTimeout(attemptSync, delay);
-                                    } else {
-                                      console.error('Failed to sync after max retries');
-                                    }
-                                  } catch (error) {
-                                    if (retryCount < maxRetries) {
-                                      retryCount++;
-                                      const delay = baseDelay * Math.pow(2, retryCount - 1);
-                                      console.log(`Sync error, retrying in ${delay}ms (attempt ${retryCount}/${maxRetries})`, error);
-                                      setTimeout(attemptSync, delay);
-                                    } else {
-                                      console.error('Failed to sync after max retries:', error);
-                                    }
-                                  }
-                                };
-
-                                // Start after 1 second
-                                setTimeout(attemptSync, 1000);
-                              }
                             }
                           }}
                         >
@@ -1021,9 +975,6 @@ mr = project.get_model_registry()`;
                               </div>
                               <div className="mt-3">
                                 <TeamMemberProjects
-                                  memberId={member.id}
-                                  memberEmail={member.email}
-                                  memberName={member.name || member.email}
                                   hopsworksUsername={member.hopsworks_username}
                                   projects={member.project_member_roles}
                                   onRemoveProject={(projectName) => handleRemoveMemberProject(member.id, member.email, projectName)}
@@ -1121,9 +1072,6 @@ mr = project.get_model_registry()`;
                         <h2 className="text-lg font-semibold">My Project Access</h2>
                       </div>
                       <TeamMemberProjects
-                        memberId={user?.sub || ''}
-                        memberEmail={user?.email || ''}
-                        memberName={user?.name || user?.email || ''}
                         hopsworksUsername={teamData?.team_members.find(m => m.id === user?.sub)?.hopsworks_username}
                       />
                     </Card>
@@ -1512,8 +1460,10 @@ mr = project.get_model_registry()`;
                                     method: 'POST'
                                   });
                                   const data = await response.json();
-                                  if (data.portalUrl) {
+                                  if (response.ok && data.portalUrl) {
                                     window.open(data.portalUrl, '_blank');
+                                  } else {
+                                    throw new Error(data.error || 'No portal URL returned');
                                   }
                                 } catch (error) {
                                   console.error('Failed to open billing portal:', error);

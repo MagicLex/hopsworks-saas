@@ -127,10 +127,8 @@ export async function assignUserToCluster(
                 assignment.hopsworks_user_id
               );
 
-              // Only bump UP, never reset down - the quota workaround in project-sync
-              // bumps maxNumProjects above the base when users delete projects
-              if (hopsworksUser && (hopsworksUser.maxNumProjects ?? 0) < expectedMaxProjects) {
-                console.log(`[Cluster Assignment] Bumping maxNumProjects from ${hopsworksUser.maxNumProjects} to ${expectedMaxProjects} for user ${userId}`);
+              if (hopsworksUser && (hopsworksUser.maxNumProjects ?? 0) !== expectedMaxProjects) {
+                console.log(`[Cluster Assignment] Setting maxNumProjects from ${hopsworksUser.maxNumProjects} to ${expectedMaxProjects} for user ${userId}`);
                 await updateUserProjectLimit(
                   { apiUrl: cluster.api_url, apiKey: cluster.api_key },
                   assignment.hopsworks_user_id,
@@ -154,14 +152,26 @@ export async function assignUserToCluster(
     // Get user details including account owner
     const { data: user } = await supabaseAdmin
       .from('users')
-      .select('stripe_customer_id, stripe_subscription_id, account_owner_id, email, name, hopsworks_user_id, hopsworks_username, billing_mode')
+      .select('stripe_customer_id, stripe_subscription_id, account_owner_id, email, name, hopsworks_user_id, hopsworks_username, billing_mode, metadata')
       .eq('id', userId)
       .single();
 
     if (!user) {
-      return { 
-        success: false, 
-        error: 'User not found' 
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+
+    // Defense in depth: flagged signups (hosting ASN / card-required email)
+    // don't get free-tier clusters. Card validation happens in start-free /
+    // accept-terms; admin manual assignment bypasses.
+    const userMeta = (user as any).metadata ?? {};
+    if (!isManualAssignment && !user.account_owner_id && user.billing_mode === 'free'
+        && (userMeta.hosting_asn || userMeta.card_required_email) && !userMeta.hosting_asn_validated) {
+      return {
+        success: false,
+        error: 'payment_validation_required: hosting-provider signup without validated payment method'
       };
     }
 
@@ -419,9 +429,8 @@ export async function assignUserToCluster(
           
           // Check and update maxNumProjects if needed
           const expectedMaxProjects = isFree ? 1 : (user.stripe_subscription_id || isPrepaid) ? 5 : 0;
-          // Only bump UP, never reset down - quota workaround bumps above base on project deletion
-          if ((existingHopsworksUser.maxNumProjects ?? 0) < expectedMaxProjects) {
-            console.log(`Bumping maxNumProjects from ${existingHopsworksUser.maxNumProjects} to ${expectedMaxProjects} for ${user.email}`);
+          if ((existingHopsworksUser.maxNumProjects ?? 0) !== expectedMaxProjects) {
+            console.log(`Setting maxNumProjects from ${existingHopsworksUser.maxNumProjects} to ${expectedMaxProjects} for ${user.email}`);
             await updateUserProjectLimit(
               { apiUrl: clusterDetails.api_url, apiKey: clusterDetails.api_key },
               existingHopsworksUser.id,

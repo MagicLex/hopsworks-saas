@@ -39,7 +39,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .order('updated_at', { ascending: false });
 
     if (usageError) {
+      // Don't serve zeros as fresh data when the read failed
       console.error('Usage error:', usageError);
+      return res.status(502).json({ error: 'Usage data temporarily unavailable' });
     }
 
     // Get the latest update time - use updated_at to show most recent collection
@@ -77,44 +79,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
 
-    // Get user with their cluster assignment
-    const { data: userData } = await supabaseAdmin
-      .from('users')
-      .select(`
-        email,
-        user_hopsworks_assignments (
-          hopsworks_clusters (
-            id,
-            api_url,
-            api_key
-          )
-        )
-      `)
-      .eq('id', userId)
-      .single();
-    
-    let modelsCount = 0;
-
-    // Use our user_projects table — Hopsworks numActiveProjects includes deleted projects
-    let projectsCount = 0;
-    try {
-      const { data: activeProjects } = await supabaseAdmin
-        .from('user_projects')
-        .select('project_id')
-        .eq('user_id', userId)
-        .eq('status', 'active');
-      projectsCount = activeProjects?.length || 0;
-    } catch (e) {
-      console.error('[Usage] Failed to get project count:', e);
-    }
-
     return res.status(200).json({
       cpuHours: totalUsage.cpuHours,
       gpuHours: totalUsage.gpuHours,
       ramGbHours: totalUsage.ramGbHours,
       storageGB: totalUsage.storageGB,
-      featureGroups: projectsCount || 0,
-      modelDeployments: modelsCount || 0,
       apiCalls: totalUsage.apiCalls,
       featureStoreApiCalls: totalUsage.featureStoreApiCalls,
       modelInferenceCalls: totalUsage.modelInferenceCalls,

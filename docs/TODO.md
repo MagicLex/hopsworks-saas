@@ -1,31 +1,24 @@
 # TODO
 
-Last updated: 2026-05-08.
+Last updated: 2026-06-11.
 
 Working board. "Shipped" lives in `git log`, not here. Items rot fast: anything older than ~30 days, prune or escalate.
 
 ## In progress
 
-_(none right now)_
+### Switch branch (`feat/lifecycle-webhook-receiver`) — merge when EE saas-augmentation deploys
+
+- [ ] Configure clusters: `LIFECYCLE_WEBHOOK_URL` / `_SECRET` / `_CLUSTER_ID` settings + `HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET` in Vercel prod.
+- [ ] Post-merge follow-ups from 2026-06-11 invariants audit (see below).
 
 ## Next
 
-### Billing chain hardening (closes INVARIANT I-14)
+### From 2026-06-11 invariants audit
 
-- [ ] Add `syncUserProjects()` before any project-count read in `src/pages/api/billing.ts` (2 sites: upgrade, downgrade).
-- [ ] Add `syncUserProjects()` before any project-count read in `src/pages/api/webhooks/stripe.ts` (2 sites: subscription deleted, payment method detached).
-- [ ] Wrap each `syncUserProjects()` call in try/catch and log; do not let a Hopsworks outage 500 the billing endpoint.
-- [ ] Check the return value at all 4 call sites; on failure, log and route through `alertBillingFailure` in `webhooks/stripe.ts` (per `reviews.md` 2026-02-20 must-fix).
-- [ ] Add try/catch back around the project-count query in `src/pages/api/usage.ts`.
-
-### Dashboard correctness
-
-- [ ] Remove `numActiveProjects` from `src/pages/api/user/hopsworks-info.ts` response. We do not trust it (see I-2, `docs/troubleshooting/known-issues.md`).
-- [ ] Add `projects: []` to the error-response path in `hopsworks-info.ts` so the dashboard does not crash on Hopsworks outage.
-
-### Project-quota tooling
-
-- [ ] `fix-project-quotas` misses users whose deleted projects were never tracked (pre-tracking era). Either backfill `user_projects` from Hopsworks admin API, or extend the endpoint to query Hopsworks directly when our DB has zero deleted rows.
+- [ ] Standardize API errors: `handleApiError` used in only a handful of ~49 routes; 80+ ad-hoc `res.status(500)`. Sweep route-by-route.
+- [ ] Promote a shared `getHopsworksCredentials(userId)` helper (private version exists in `src/lib/user-status.ts:37`) — the assignments→cluster→credentials block is inlined in 17 files. Same for a shared `supabaseAdmin` (46 module-level instantiations) and shared Stripe client (10).
+- [ ] Reapers: downgrade-deadline suspension only fires when the user hits `/api/billing` (limbo users sleep forever) — move to a cron sweep. Purge resolved `health_check_failures` >30d and expired invites on a schedule instead of manually.
+- [ ] `user_projects` inactive rows: define retention or keep forever deliberately.
 
 ### Doc cleanup (from 2026-05-08 audit)
 
@@ -53,5 +46,4 @@ _(none right now)_
 
 ## Watching
 
-- Hopsworks bug: `numActiveProjects` and `maxNumProjects` count created (not active). Ratchet workaround stays until the upstream fix lands. Track in `docs/troubleshooting/known-issues.md:137`.
 - Vercel `undici` fetch does not support per-request HTTPS agents. SSL bypass stays global until either we migrate to `node-fetch@2` or Hopsworks ships real certs. See `docs/troubleshooting/investigations.md` SSL section.

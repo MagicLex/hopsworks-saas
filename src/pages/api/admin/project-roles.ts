@@ -157,7 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(404).json({ error: `Project '${projectName}' not found in Hopsworks` });
         }
 
-        await removeUserFromProject(credentials, project.id, user.email);
+        await removeUserFromProject(credentials, project.id, hopsworksUserId);
 
         await supabaseAdmin
           .from('project_member_roles')

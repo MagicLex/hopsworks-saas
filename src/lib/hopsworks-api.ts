@@ -197,51 +197,21 @@ export async function createHopsworksOAuthUser(
 }
 
 /**
- * Create a project for a user
- */
-export async function createHopsworksProject(
-  credentials: HopsworksCredentials,
-  username: string,
-  projectName: string
-): Promise<void> {
-  const response = await fetchWithTimeout(`${credentials.apiUrl}${HOPSWORKS_API_BASE}/admin/projects/createas`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `ApiKey ${credentials.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      owner: username,
-      projectName,
-      services: ['JOBS', 'HIVE', 'KAFKA', 'FEATURESTORE', 'SERVING']
-    }),
-    // @ts-ignore
-    agent: httpsAgent
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error(`[Hopsworks API] Project creation failed for ${projectName} (owner: ${username}) on ${credentials.apiUrl}: ${response.status} ${response.statusText}`, errorBody);
-
-    if (response.status === 409) {
-      throw new Error(`Project name already exists: ${projectName} (owner: ${username})`);
-    }
-    throw new Error(`Failed to create project ${projectName} on ${credentials.apiUrl}: ${response.statusText}`);
-  }
-}
-
-/**
- * Get user's projects (both owned and member of)
- * Fetches all projects and filters by user ID or username
+ * Get a user's active (owned) projects, filtered server-side.
  */
 export async function getUserProjects(
   credentials: HopsworksCredentials,
   username: string,
   userId?: number
 ): Promise<HopsworksProject[]> {
-  // Fetch all projects and filter by owner
+  if (!userId) {
+    // No upstream user ID means the user doesn't exist in Hopsworks: no owned projects.
+    console.warn(`[Hopsworks API] getUserProjects called without userId for ${username}, returning []`);
+    return [];
+  }
+
   const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/projects?expand=creator`,
+    `${credentials.apiUrl}${ADMIN_API_BASE}/projects?status=active&ownerId=${userId}&expand=creator`,
     {
       headers: {
         'Authorization': `ApiKey ${credentials.apiKey}`
@@ -256,62 +226,7 @@ export async function getUserProjects(
   }
 
   const data = await response.json();
-  const allProjects = data.items || [];
-
-  // Filter projects by creator - use expanded creator object
-  const userProjects = allProjects.filter((project: any) => {
-    if (project.creator) {
-      // Match by user ID if provided
-      if (userId && project.creator.id === userId) {
-        return true;
-      }
-      // Match by username
-      if (project.creator.username === username) {
-        return true;
-      }
-    }
-    // Fallback to old owner field if it exists (for backward compatibility)
-    return project.owner === username;
-  });
-
-  return userProjects;
-}
-
-/**
- * Get project usage for a specific date
- */
-export async function getProjectUsage(
-  credentials: HopsworksCredentials,
-  projectId: number,
-  date: string
-): Promise<ProjectUsage> {
-  // This endpoint needs to be implemented by Hopsworks
-  // For now, we'll return mock data structure
-  const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${HOPSWORKS_API_BASE}/admin/projects/${projectId}/usage?date=${date}`,
-    {
-      headers: {
-        'Authorization': `ApiKey ${credentials.apiKey}`
-      },
-      // @ts-ignore
-      agent: httpsAgent
-    }
-  );
-
-  if (!response.ok) {
-    // If endpoint doesn't exist yet, return empty usage
-    if (response.status === 404) {
-      return {
-        date,
-        compute: { instances: [] },
-        storage: { featureStore: 0, models: 0, datasets: 0, total: 0 },
-        apiCalls: { featureStore: 0, modelServing: 0, jobs: 0, total: 0 }
-      };
-    }
-    throw new Error(`Failed to fetch project usage: ${response.statusText}`);
-  }
-
-  return await response.json();
+  return data.items || [];
 }
 
 /**
@@ -452,32 +367,6 @@ export async function getHopsworksUserById(
   }
 }
 
-
-/**
- * Get all users (admin endpoint)
- */
-export async function getAllUsers(
-  credentials: HopsworksCredentials,
-  authToken: string
-): Promise<HopsworksUser[]> {
-  const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/users`,
-    {
-      headers: {
-        'Authorization': authToken
-      },
-      // @ts-ignore
-      agent: httpsAgent
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch users: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.items || [];
-}
 
 /**
  * Get all projects (admin endpoint)

@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { requireActiveSession } from '@/lib/require-active-session';
+import { handleApiError } from '@/lib/error-handler';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 
@@ -159,10 +160,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       autoFixApplied: autoFix && billingStatus.fixes.length > 0
     });
   } catch (error) {
-    console.error('Error verifying billing:', error);
-    return res.status(500).json({ 
-      error: 'Failed to verify billing status',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    return handleApiError(error, res, 'GET /api/user/verify-billing');
   }
 }

@@ -80,7 +80,7 @@ describe('billing state transitions', () => {
     const sourceFile = path.join(process.cwd(), 'src/pages/api/webhooks/stripe.ts');
     const source = fs.readFileSync(sourceFile, 'utf-8');
 
-    // Should upgrade from 1 to 5 projects
+    // Should set the postpaid baseline (5) on upgrade
     expect(source).toContain('updateUserProjectLimit');
     expect(source).toContain('Update maxNumProjects from 1 to 5');
   });

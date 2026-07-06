@@ -156,6 +156,14 @@ export default function BillingSetup() {
           .json()
           .catch(() => ({ error: 'Server error' }));
         console.error('Failed to start free:', data.error);
+        if (data.requiresPaymentValidation) {
+          setError(
+            data.error ||
+              'Your signup network requires a payment method on file before using the free tier. Add a card above (no charges) and try again.',
+          );
+          setSavingConsent(false);
+          return;
+        }
         if (response.status === 400) {
           setError(
             data.error || 'Cannot switch to free tier. Please contact support.',

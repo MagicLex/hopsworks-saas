@@ -8,25 +8,9 @@ interface HopsworksCredentials {
 }
 
 /**
- * Check if a project exists in Hopsworks
- */
-export async function projectExists(
-  credentials: HopsworksCredentials,
-  projectName: string
-): Promise<boolean> {
-  try {
-    const projects = await getAllProjects(credentials);
-    return projects.some(p => p.name === projectName);
-  } catch (error) {
-    console.error(`Failed to check if project ${projectName} exists:`, error);
-    return false;
-  }
-}
-
-/**
  * Get all projects from Hopsworks and return their names and IDs
  */
-export async function getAllProjects(
+async function getAllProjects(
   credentials: HopsworksCredentials
 ): Promise<Array<{ id: number; name: string; created?: string; owner?: string }>> {
   try {
@@ -85,7 +69,7 @@ export async function validateProject(
   try {
     const projects = await getAllProjects(credentials);
     const project = projects.find(p => p.name === projectName);
-    
+
     if (project) {
       return {
         id: project.id,
@@ -93,34 +77,10 @@ export async function validateProject(
         exists: true
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error(`Failed to validate project ${projectName}:`, error);
     return null;
-  }
-}
-
-/**
- * Check if user exists in Hopsworks by numeric user ID
- */
-export async function userExists(
-  credentials: HopsworksCredentials,
-  userId: number
-): Promise<boolean> {
-  try {
-    const response = await fetch(
-      `${credentials.apiUrl}${ADMIN_API_BASE}/users/${userId}`,
-      {
-        headers: {
-          'Authorization': `ApiKey ${credentials.apiKey}`
-        }
-      }
-    );
-
-    return response.ok;
-  } catch (error) {
-    console.error(`Failed to check if user ${userId} exists:`, error);
-    return false;
   }
 }

@@ -191,20 +191,12 @@ async function handlePaymentMethodSetup(session: Stripe.Checkout.Session) {
             .single();
 
           if (cluster) {
-            // Only bump UP - quota workaround may have set it higher than 5
-            const { getHopsworksUserById } = await import('../../../lib/hopsworks-api');
-            const hwUser = await getHopsworksUserById(
+            await updateUserProjectLimit(
               { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-              assignment.hopsworks_user_id
+              assignment.hopsworks_user_id,
+              5
             );
-            if (hwUser && (hwUser.maxNumProjects ?? 0) < 5) {
-              await updateUserProjectLimit(
-                { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-                assignment.hopsworks_user_id,
-                5
-              );
-              console.log(`Updated maxNumProjects to 5 for user ${user.id} after free->postpaid upgrade`);
-            }
+            console.log(`Updated maxNumProjects to 5 for user ${user.id} after free->postpaid upgrade`);
           }
         }
       } catch (error) {
@@ -380,7 +372,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     }
 
     // Downgrade to free tier instead of suspending
-    // Sync projects before counting — user_projects may be stale (last synced at login)
+    // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
     try {
       const syncResult = await syncUserProjects(user.id);
       if (!syncResult.success) {
@@ -443,20 +435,12 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
           .single();
 
         if (cluster) {
-          // Only bump UP - quota workaround may have set it higher than 1
-          const { getHopsworksUserById } = await import('../../../lib/hopsworks-api');
-          const hwUser = await getHopsworksUserById(
+          await updateUserProjectLimit(
             { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-            assignment.hopsworks_user_id
+            assignment.hopsworks_user_id,
+            1
           );
-          if (hwUser && (hwUser.maxNumProjects ?? 0) < 1) {
-            await updateUserProjectLimit(
-              { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-              assignment.hopsworks_user_id,
-              1
-            );
-            console.log(`Updated maxNumProjects to 1 for user ${user.id} after subscription deletion`);
-          }
+          console.log(`Updated maxNumProjects to 1 for user ${user.id} after subscription deletion`);
         }
       }
     } catch (e) {
@@ -562,7 +546,7 @@ async function handlePaymentMethodDetached(paymentMethod: Stripe.PaymentMethod, 
         if (paymentMethods.data.length === 0) {
           console.log(`User ${user.id} lost last payment method - downgrading to free tier`);
 
-          // Sync projects before counting — user_projects may be stale (last synced at login)
+          // Sync projects before counting — don't trust a possibly lagging cache for a billing decision
           try {
             const syncResult = await syncUserProjects(user.id);
             if (!syncResult.success) {
@@ -637,20 +621,12 @@ async function handlePaymentMethodDetached(paymentMethod: Stripe.PaymentMethod, 
                 .single();
 
               if (cluster) {
-                // Only bump UP - quota workaround may have set it higher than 1
-                const { getHopsworksUserById } = await import('../../../lib/hopsworks-api');
-                const hwUser = await getHopsworksUserById(
+                await updateUserProjectLimit(
                   { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-                  assignment.hopsworks_user_id
+                  assignment.hopsworks_user_id,
+                  1
                 );
-                if (hwUser && (hwUser.maxNumProjects ?? 0) < 1) {
-                  await updateUserProjectLimit(
-                    { apiUrl: cluster.api_url, apiKey: cluster.api_key },
-                    assignment.hopsworks_user_id,
-                    1
-                  );
-                  console.log(`Updated maxNumProjects to 1 for user ${user.id} after payment method removal`);
-                }
+                console.log(`Updated maxNumProjects to 1 for user ${user.id} after payment method removal`);
               }
             }
           } catch (e) {

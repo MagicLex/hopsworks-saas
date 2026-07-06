@@ -3,8 +3,8 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
-import { getHopsworksUserById, getHopsworksUserByEmail, updateUserProjectLimit, createHopsworksOAuthUser, updateHopsworksUserStatus } from '../../../lib/hopsworks-api';
-import { HOPSWORKS_STATUS } from '../../../lib/user-status';
+import { checkRegistrationIp } from '../../../lib/asn-check';
+import { checkSignupAbuse, isCardRequiredEmail } from '../../../lib/signup-abuse';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
 
@@ -75,11 +75,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const healthCheckResults = {
       userExists: false,
       billingEnabled: false,
-      clusterAssigned: false,
-      hopsworksUserExists: false,
-      usernamesSynced: false,
-      maxNumProjectsCorrect: false,
-      teamMembershipCorrect: false
+      clusterAssigned: false
     };
 
     // Check if user exists in our database
@@ -102,7 +98,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let billingMode = null;
       let metadata: any = {};
       let registrationSource = 'organic';
-      
+
+      // Unverified emails never become accounts: Auth0 database signups must
+      // click the verification link first (OAuth providers arrive verified).
+      // Only explicit false blocks — a missing claim (some SSO connections)
+      // passes, so we never lock out enterprise logins.
+      if ((session.user as any).email_verified === false) {
+        console.log(`[Signup] ${email} blocked: email not verified`);
+        return res.status(403).json({
+          error: 'Please verify your email address first. Check your inbox for the verification link, then sign in again.',
+          emailVerificationRequired: true
+        });
+      }
+
+      const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+
+      // Signup abuse gates: disposable email, abuse-suspended IP reuse,
+      // per-IP velocity. These fire BEFORE account creation.
+      const blockReason = await checkSignupAbuse(supabaseAdmin, email, registrationIp, !!teamInviteToken);
+      if (blockReason) {
+        console.warn(`[Signup abuse] Blocked signup for ${email} from ${registrationIp}: ${blockReason}`);
+        return res.status(403).json({
+          error: 'Signup is not available for this email or network. Contact support@hopsworks.ai if you believe this is an error.'
+        });
+      }
+
+      // ASN check on registration IP: hosting-provider signups (EC2, Hetzner...)
+      // get flagged and must validate a payment method before free compute
+      const asnInfo = await checkRegistrationIp(registrationIp);
+      if (asnInfo) {
+        metadata.registration_asn = asnInfo.asn;
+        metadata.registration_asn_org = asnInfo.asnOrg;
+        if (asnInfo.hosting) {
+          metadata.hosting_asn = true;
+          console.log(`[ASN check] ${email} signed up from hosting ASN ${asnInfo.asn} (${asnInfo.asnOrg}) - flagged for payment validation`);
+        }
+      }
+
+      // Anonymity-friendly email providers get the same card-before-free gate
+      if (isCardRequiredEmail(email)) {
+        metadata.card_required_email = true;
+        console.log(`[Signup abuse] ${email} uses a card-required email domain - flagged for payment validation`);
+      }
+
       // Handle corporate registration
       if (corporateRef) {
         try {
@@ -172,7 +210,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email,
           name: name || null, // Keep for backward compatibility
           registration_source: registrationSource,
-          registration_ip: req.headers['x-forwarded-for'] as string || req.socket.remoteAddress,
+          registration_ip: registrationIp,
           status: 'active',
           billing_mode: billingMode || null, // NULL until user chooses plan (prepaid set by corporate/promo)
           promo_code: normalizedPromoCode, // Store promo code in dedicated column
@@ -196,7 +234,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           email,
           name: actualName,
           source: registrationSource,
-          ip: req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || null
+          ip: registrationIp || null
         }).catch(err => console.error('[Marketing] Registration webhook failed:', err));
 
         // For prepaid users (corporate/promo), also fire plan.updated since plan is known at registration
@@ -438,287 +476,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         healthCheckResults.clusterAssigned = true;
       }
       
-      // HEALTH CHECK 3: Verify Hopsworks user and settings
-      if (assignment?.hopsworks_clusters) {
-        const cluster = assignment.hopsworks_clusters;
-        const credentials = {
-          apiUrl: cluster.api_url,
-          apiKey: cluster.api_key
-        };
-        
-        console.log(`[Health Check] Checking Hopsworks user for ${email}`);
-        
-        // Check if Hopsworks user exists
-        let hopsworksUser = null;
-        let hopsworksUsername = assignment.hopsworks_username || existingUser.hopsworks_username;
-        let hopsworksUserId = assignment.hopsworks_user_id || existingUser.hopsworks_user_id;
-        
-        // Try to get user by ID first if we have it
-        if (assignment.hopsworks_user_id || existingUser.hopsworks_user_id) {
-          const userId = assignment.hopsworks_user_id || existingUser.hopsworks_user_id;
-          try {
-            hopsworksUser = await getHopsworksUserById(credentials, userId);
-            if (hopsworksUser) {
-              healthCheckResults.hopsworksUserExists = true;
-              hopsworksUserId = hopsworksUser.id;
-              hopsworksUsername = hopsworksUser.username;
+      // Hopsworks-state reconciliation (user existence, status, maxNumProjects,
+      // username sync, team membership) is event-driven via the lifecycle webhook
+      // receiver (/api/webhooks/hopsworks-lifecycle). No per-login health checks.
 
-              // Sync hopsworks_user_id and username if either is missing from either table
-              const needsUserIdSync = !assignment.hopsworks_user_id || !existingUser.hopsworks_user_id;
-              const needsUsernameSync = !assignment.hopsworks_username || !existingUser.hopsworks_username;
-
-              if (needsUserIdSync || needsUsernameSync) {
-                console.log(`[Health Check] Syncing Hopsworks data for user ID ${hopsworksUserId}: needsUserIdSync=${needsUserIdSync}, needsUsernameSync=${needsUsernameSync}`);
-
-                const { error: userUpdateError } = await supabaseAdmin
-                  .from('users')
-                  .update({
-                    hopsworks_user_id: hopsworksUserId,
-                    hopsworks_username: hopsworksUsername
-                  })
-                  .eq('id', existingUser.id);
-
-                if (userUpdateError) {
-                  console.error(`[Health Check] Failed to update users table:`, userUpdateError);
-                }
-
-                const { error: assignmentUpdateError } = await supabaseAdmin
-                  .from('user_hopsworks_assignments')
-                  .update({
-                    hopsworks_user_id: hopsworksUserId,
-                    hopsworks_username: hopsworksUsername
-                  })
-                  .eq('user_id', existingUser.id);
-
-                if (assignmentUpdateError) {
-                  console.error(`[Health Check] Failed to update user_hopsworks_assignments table:`, assignmentUpdateError);
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`[Health Check] Failed to fetch Hopsworks user ${userId}:`, error);
-          }
-        }
-        
-        // If still no user, try by email
-        if (!hopsworksUser) {
-          try {
-            hopsworksUser = await getHopsworksUserByEmail(credentials, existingUser.email);
-            if (hopsworksUser) {
-              healthCheckResults.hopsworksUserExists = true;
-              hopsworksUserId = hopsworksUser.id;
-              hopsworksUsername = hopsworksUser.username;
-              
-              console.log(`[Health Check] Found Hopsworks user by email: ${hopsworksUsername} (ID: ${hopsworksUserId})`);
-              
-              // Update database with found user info
-              await supabaseAdmin
-                .from('users')
-                .update({ 
-                  hopsworks_user_id: hopsworksUserId,
-                  hopsworks_username: hopsworksUsername
-                })
-                .eq('id', userId);
-              
-              await supabaseAdmin
-                .from('user_hopsworks_assignments')
-                .update({ 
-                  hopsworks_user_id: hopsworksUserId,
-                  hopsworks_username: hopsworksUsername
-                })
-                .eq('user_id', userId);
-            }
-          } catch (error) {
-            console.error(`[Health Check] Failed to fetch Hopsworks user by email:`, error);
-          }
-        }
-        
-        // If no Hopsworks user, try to create one
-        if (!hopsworksUser) {
-          console.log(`[Health Check] Hopsworks user not found for ${email} - attempting to create`);
-          try {
-            // Get names from Auth0 token (guaranteed by Auth0 Action)
-            const firstName = (session.user as any).given_name || email.split('@')[0];
-            const lastName = (session.user as any).family_name || '.';
-            const expectedMaxProjects = isTeamMember ? 0 :
-                                      existingUser.billing_mode === 'free' ? 1 :
-                                      (existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid') ? 5 : 0;
-
-            const newHopsworksUser = await createHopsworksOAuthUser(
-              credentials,
-              email,
-              firstName,
-              lastName,
-              userId,
-              expectedMaxProjects
-            );
-            
-            hopsworksUser = newHopsworksUser;
-            hopsworksUsername = newHopsworksUser.username;
-            healthCheckResults.hopsworksUserExists = true;
-            
-            // Update database with Hopsworks info
-            await supabaseAdmin
-              .from('users')
-              .update({ 
-                hopsworks_user_id: newHopsworksUser.id,
-                hopsworks_username: hopsworksUsername
-              })
-              .eq('id', userId);
-            
-            await supabaseAdmin
-              .from('user_hopsworks_assignments')
-              .update({ 
-                hopsworks_user_id: newHopsworksUser.id,
-                hopsworks_username: hopsworksUsername
-              })
-              .eq('user_id', userId);
-            
-            console.log(`[Health Check] Created Hopsworks user ${hopsworksUsername} for ${email}`);
-          } catch (error) {
-            await logHealthCheckFailure(userId, email, 'hopsworks_user_creation', 
-              'Failed to create Hopsworks user', error);
-            console.error(`[Health Check] Failed to create Hopsworks user for ${email}:`, error);
-          }
-        }
-
-        // HEALTH CHECK 4: Verify Hopsworks account is activated (if Supabase is active AND billing is valid)
-        if (hopsworksUser && hopsworksUserId && existingUser.status === 'active') {
-          const hasBilling = isTeamMember || existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid' || existingUser.billing_mode === 'free';
-          const hopsworksStatus = hopsworksUser.status;
-
-          if (hasBilling && hopsworksStatus !== HOPSWORKS_STATUS.ACTIVATED_ACCOUNT) {
-            console.log(`[Health Check] User ${email} has deactivated Hopsworks account (status ${hopsworksStatus}) but valid billing - reactivating`);
-            try {
-              await updateHopsworksUserStatus(credentials, hopsworksUserId, HOPSWORKS_STATUS.ACTIVATED_ACCOUNT);
-              console.log(`[Health Check] Successfully reactivated Hopsworks account for ${email}`);
-            } catch (error) {
-              await logHealthCheckFailure(userId, email, 'hopsworks_reactivation',
-                `Failed to reactivate Hopsworks account (status ${hopsworksStatus})`, error);
-              console.error(`[Health Check] Failed to reactivate Hopsworks account for ${email}:`, error);
-            }
-          }
-        }
-
-        // HEALTH CHECK 5: Verify maxNumProjects is correct
-        if (hopsworksUser && hopsworksUserId) {
-          const expectedMaxProjects = isTeamMember ? 0 :
-                                    existingUser.billing_mode === 'free' ? 1 :
-                                    (existingUser.stripe_subscription_id || existingUser.billing_mode === 'prepaid') ? 5 : 0;
-          
-          const currentMaxProjects = hopsworksUser.maxNumProjects ?? 0;
-          
-          // Only bump UP, never reset down. The quota workaround in project-sync
-          // bumps maxNumProjects above the base when users delete projects (because
-          // Hopsworks counts created projects, not active ones). Resetting down
-          // would undo that workaround.
-          if (currentMaxProjects < expectedMaxProjects) {
-            console.log(`[Health Check] User ${email} has maxNumProjects too low (${currentMaxProjects} vs expected ${expectedMaxProjects}) - fixing`);
-            try {
-              await updateUserProjectLimit(credentials, hopsworksUserId, expectedMaxProjects);
-              healthCheckResults.maxNumProjectsCorrect = true;
-              console.log(`[Health Check] Successfully updated maxNumProjects to ${expectedMaxProjects} for ${email}`);
-            } catch (error) {
-              await logHealthCheckFailure(userId, email, 'maxnumprojects_update',
-                `Failed to update maxNumProjects from ${currentMaxProjects} to ${expectedMaxProjects}`, error);
-              console.error(`[Health Check] Failed to update maxNumProjects for ${email}:`, error);
-            }
-          } else {
-            healthCheckResults.maxNumProjectsCorrect = true;
-          }
-          
-          // Sync username if needed - update BOTH tables
-          if (hopsworksUsername && hopsworksUsername !== existingUser.hopsworks_username) {
-            const { error: userError } = await supabaseAdmin
-              .from('users')
-              .update({ hopsworks_username: hopsworksUsername })
-              .eq('id', userId);
-
-            if (userError) {
-              console.error(`[Health Check] Failed to sync username to users:`, userError);
-            }
-
-            const { error: assignmentError } = await supabaseAdmin
-              .from('user_hopsworks_assignments')
-              .update({ hopsworks_username: hopsworksUsername })
-              .eq('user_id', userId);
-
-            if (assignmentError) {
-              console.error(`[Health Check] Failed to sync username to assignments:`, assignmentError);
-            }
-
-            healthCheckResults.usernamesSynced = true;
-          } else if (hopsworksUsername) {
-            healthCheckResults.usernamesSynced = true;
-          }
-        }
-      }
-      
-      // HEALTH CHECK 6: Verify team membership consistency
-      if (isTeamMember) {
-        const { data: ownerAssignment } = await supabaseAdmin
-          .from('user_hopsworks_assignments')
-          .select('hopsworks_cluster_id')
-          .eq('user_id', existingUser.account_owner_id)
-          .single();
-        
-        if (ownerAssignment && assignment) {
-          if (ownerAssignment.hopsworks_cluster_id !== assignment.hopsworks_cluster_id) {
-            console.log(`[Health Check] Team member ${email} on wrong cluster - should be ${ownerAssignment.hopsworks_cluster_id}`);
-            await logHealthCheckFailure(userId, email, 'team_cluster_mismatch', 
-              `Team member on cluster ${assignment.hopsworks_cluster_id} but owner on ${ownerAssignment.hopsworks_cluster_id}`);
-            // TODO: Implement cluster migration
-          } else {
-            healthCheckResults.teamMembershipCorrect = true;
-          }
-        }
-        
-        // HEALTH CHECK 7: Log team member project access status (no auto-repair)
-        const teamMemberUsername = assignment?.hopsworks_username || existingUser.hopsworks_username;
-        if (assignment?.hopsworks_clusters && teamMemberUsername) {
-          try {
-            const { getUserProjects } = await import('../../../lib/hopsworks-team');
-            const credentials = {
-              apiUrl: assignment.hopsworks_clusters.api_url,
-              apiKey: assignment.hopsworks_clusters.api_key
-            };
-            
-            // Get team member's current projects
-            const memberProjects = await getUserProjects(credentials, teamMemberUsername);
-            
-            // Get owner's username
-            const { data: owner } = await supabaseAdmin
-              .from('users')
-              .select('hopsworks_username')
-              .eq('id', existingUser.account_owner_id)
-              .single();
-            
-            if (owner?.hopsworks_username) {
-              // Get owner's projects
-              const ownerProjects = await getUserProjects(credentials, owner.hopsworks_username);
-              
-              // Just log the status - don't auto-add
-              const memberProjectNames = new Set(memberProjects.map(p => p.name));
-              const accessibleProjects = ownerProjects.filter(p => memberProjectNames.has(p.name));
-              const missingProjects = ownerProjects.filter(p => !memberProjectNames.has(p.name));
-              
-              if (accessibleProjects.length > 0) {
-                console.log(`[Health Check] Team member ${email} has access to ${accessibleProjects.length}/${ownerProjects.length} owner projects`);
-              }
-              
-              if (missingProjects.length > 0) {
-                console.log(`[Health Check] Team member ${email} not in projects: ${missingProjects.map(p => p.name).join(', ')}`);
-                // Don't auto-add - owner controls project membership
-              }
-            }
-          } catch (error) {
-            console.error(`[Health Check] Failed to check team member project access:`, error);
-          }
-        }
-      } else {
-        healthCheckResults.teamMembershipCorrect = true;
-      }
-      
       // Update last login
       const { data: currentUser } = await supabaseAdmin
         .from('users')
@@ -734,9 +495,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })
         .eq('id', userId);
         
-      // NOTE: Main Hopsworks sync is handled above in Health Check 3.
-      // This secondary block is now redundant and has been removed to avoid duplication.
-      
       // Auto-resolve stale health check failures for checks that now pass
       const resolvedTypes: string[] = [];
       if (healthCheckResults.billingEnabled) {
@@ -744,12 +502,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       if (healthCheckResults.clusterAssigned) {
         resolvedTypes.push('cluster_assignment');
-      }
-      if (healthCheckResults.hopsworksUserExists) {
-        resolvedTypes.push('hopsworks_user_creation', 'hopsworks_user_creation_owner', 'hopsworks_user_creation_team');
-      }
-      if (healthCheckResults.maxNumProjectsCorrect) {
-        resolvedTypes.push('maxnumprojects_update', 'setup_payment_maxnumprojects', 'lazy_upgrade_maxnumprojects');
       }
       if (resolvedTypes.length > 0) {
         await resolveHealthCheckFailures(userId, resolvedTypes);
@@ -768,22 +520,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Get current user state for payment check (important for new users)
-    // CRITICAL: Sync user projects for billing accuracy
-    // This ensures we have accurate project data for billing calculations
-    let projectSyncResult: any = { success: false, projectsFound: 0, projectsSynced: 0 };
-    try {
-      const { syncUserProjects } = await import('../../../lib/project-sync');
-      projectSyncResult = await syncUserProjects(userId);
-      
-      if (projectSyncResult.success) {
-        console.log(`[Project Sync] Synced ${projectSyncResult.projectsSynced} of ${projectSyncResult.projectsFound} projects for ${email}`);
-      } else if (projectSyncResult.error) {
-        console.error(`[Project Sync] Failed for ${email}: ${projectSyncResult.error}`);
-      }
-    } catch (error) {
-      console.error(`[Project Sync] Error for ${email}:`, error);
-    }
-    
     const { data: currentUser } = await supabaseAdmin
       .from('users')
       .select('account_owner_id, stripe_customer_id, billing_mode, status')
@@ -802,8 +538,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Check if any critical health checks failed
     const hasWarnings = healthCheckResults.userExists && (
       !healthCheckResults.billingEnabled ||
-      !healthCheckResults.clusterAssigned ||
-      !healthCheckResults.hopsworksUserExists
+      !healthCheckResults.clusterAssigned
     );
 
     return res.status(200).json({
@@ -813,8 +548,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       needsPayment,
       isSuspended,
       isTeamMember: !!existingUser?.account_owner_id,
-      hasBilling: !!existingUser?.stripe_customer_id || existingUser?.billing_mode === 'prepaid' || existingUser?.billing_mode === 'free',
-      projectSync: projectSyncResult
+      hasBilling: !!existingUser?.stripe_customer_id || existingUser?.billing_mode === 'prepaid' || existingUser?.billing_mode === 'free'
     });
   } catch (error) {
     return handleApiError(error, res, 'POST /api/auth/sync-user');
