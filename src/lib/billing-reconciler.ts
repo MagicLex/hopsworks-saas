@@ -24,6 +24,22 @@ function startOfMonthUtc(): string {
   return d.toISOString().split('T')[0];
 }
 
+// PostgREST caps responses at 1000 rows; a plain select silently truncates past
+// that, which for billing data means silently under-counting. Page explicitly.
+async function fetchAll<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+): Promise<T[]> {
+  const PAGE = 1000;
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await query(from, from + PAGE - 1);
+    if (error) throw new Error(`${label} query failed: ${error.message}`);
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) return rows;
+  }
+}
+
 // Month-to-date recorded cost per account. Cost is attributed to the account owner
 // via usage_daily.account_owner_id (NULL on the owner's own rows), so the account
 // key is coalesce(account_owner_id, user_id) — same keying as the spending-cap check.
@@ -32,12 +48,17 @@ export async function monthToDateByAccount(
   startOfMonthStr: string,
 ): Promise<Map<string, number>> {
   const totals = new Map<string, number>();
-  const { data, error } = await supabase
-    .from('usage_daily')
-    .select('user_id, account_owner_id, total_cost')
-    .gte('date', startOfMonthStr);
-  if (error) throw new Error(`usage_daily query failed: ${error.message}`);
-  for (const row of data || []) {
+  const data = await fetchAll<{ user_id: string; account_owner_id: string | null; total_cost: number | null }>(
+    (from, to) =>
+      supabase
+        .from('usage_daily')
+        .select('user_id, account_owner_id, total_cost')
+        .gte('date', startOfMonthStr)
+        .order('id')
+        .range(from, to),
+    'usage_daily',
+  );
+  for (const row of data) {
     const key = row.account_owner_id || row.user_id;
     totals.set(key, (totals.get(key) || 0) + (row.total_cost || 0));
   }
@@ -55,12 +76,47 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
 
   // Account owners only (account_owner_id IS NULL). Team members inherit the owner's
   // enforcement; their projects live under the owner in user_projects.
-  const { data: owners, error } = await supabase
-    .from('users')
-    .select('id, billing_mode, spending_cap, enforcement_state')
-    .is('account_owner_id', null)
-    .eq('status', 'active');
-  if (error) throw new Error(`users query failed: ${error.message}`);
+  const owners = await fetchAll<{
+    id: string;
+    billing_mode: string | null;
+    spending_cap: number | null;
+    enforcement_state: EnforcementState | null;
+  }>(
+    (from, to) =>
+      supabase
+        .from('users')
+        .select('id, billing_mode, spending_cap, enforcement_state')
+        .is('account_owner_id', null)
+        .eq('status', 'active')
+        .order('id')
+        .range(from, to),
+    'users',
+  );
+
+  // All active projects in one pass, grouped by owner: a per-owner query is ~1000
+  // sequential round trips and blows the function's maxDuration.
+  const allProjects = await fetchAll<{
+    id: string;
+    user_id: string;
+    namespace: string;
+    capacity_tier: string | null;
+    applied_quota_tier: string | null;
+  }>(
+    (from, to) =>
+      supabase
+        .from('user_projects')
+        .select('id, user_id, namespace, capacity_tier, applied_quota_tier')
+        .eq('status', 'active')
+        .order('id')
+        .range(from, to),
+    'user_projects',
+  );
+  const projectsByOwner = new Map<string, typeof allProjects>();
+  for (const p of allProjects) {
+    const list = projectsByOwner.get(p.user_id);
+    if (list) list.push(p);
+    else projectsByOwner.set(p.user_id, [p]);
+  }
 
   const summary: ReconcileSummary = {
     accountsEvaluated: 0,
@@ -112,17 +168,9 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
     }
 
     // Resolve applied_quota_tier per active project of this account.
-    const { data: projects, error: pErr } = await supabase
-      .from('user_projects')
-      .select('id, namespace, capacity_tier, applied_quota_tier')
-      .eq('user_id', owner.id)
-      .eq('status', 'active');
-    if (pErr) {
-      console.error(`[reconcile] ${owner.id}: failed to load projects: ${pErr.message}`);
-      continue;
-    }
+    const projects = projectsByOwner.get(owner.id) || [];
 
-    for (const p of projects || []) {
+    for (const p of projects) {
       const capacity: CapacityTier = (p.capacity_tier as CapacityTier) || 'small';
       const applied = resolveAppliedTier(capacity, state);
       if (applied !== p.applied_quota_tier) {
