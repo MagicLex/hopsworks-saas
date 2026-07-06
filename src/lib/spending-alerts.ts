@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import { effectiveBudgetUsd } from '../config/enforcement';
 
 const SPENDING_THRESHOLDS = [80, 90, 100] as const;
 type SpendingThreshold = typeof SPENDING_THRESHOLDS[number];
@@ -13,13 +14,16 @@ interface UserWithCap {
   id: string;
   email: string;
   name?: string;
-  spending_cap: number;
+  billing_mode?: string | null;
+  spending_cap: number | null;
   spending_alerts_sent: SpendingAlertsData | null;
 }
 
 /**
- * Check spending against cap and send alerts if thresholds crossed.
- * Called after usage is calculated in collect-opencost cron.
+ * Check spending against the account budget and send nudge emails on threshold
+ * crossings. The budget is the free default ($10) for free accounts, or the self-set
+ * spending_cap for paying accounts. Called after usage is calculated in the
+ * collect-opencost cron. Notification only; the reconciler does the enforcement.
  */
 export async function checkSpendingCap(
   supabase: SupabaseClient,
@@ -27,12 +31,12 @@ export async function checkSpendingCap(
   accountOwnerId: string | null,
   monthlyTotal: number
 ): Promise<void> {
-  // Billing is charged to account owner, so check their cap
+  // Billing is charged to the account owner, so check their budget
   const targetUserId = accountOwnerId || userId;
 
   const { data: user, error } = await supabase
     .from('users')
-    .select('id, email, name, spending_cap, spending_alerts_sent')
+    .select('id, email, name, billing_mode, spending_cap, spending_alerts_sent')
     .eq('id', targetUserId)
     .single();
 
@@ -41,14 +45,17 @@ export async function checkSpendingCap(
     return;
   }
 
-  // No cap set - nothing to check
-  if (!user.spending_cap || user.spending_cap <= 0) {
+  // Free accounts get the default budget; paying accounts only when they set a cap.
+  // No budget (paying, no cap) means nothing to nudge on.
+  const budget = effectiveBudgetUsd(user.billing_mode, user.spending_cap);
+  if (budget == null) {
     return;
   }
+  const isSelfCap = user.billing_mode !== 'free';
 
   const currentMonth = getCurrentMonth();
   const alertsData = parseAlertsData(user.spending_alerts_sent, currentMonth);
-  const percentUsed = (monthlyTotal / user.spending_cap) * 100;
+  const percentUsed = (monthlyTotal / budget) * 100;
 
   // Determine which thresholds are crossed but not yet alerted
   const newThresholds = SPENDING_THRESHOLDS.filter(threshold =>
@@ -62,9 +69,9 @@ export async function checkSpendingCap(
   // Send alert for the highest crossed threshold
   const highestThreshold = Math.max(...newThresholds) as SpendingThreshold;
 
-  console.log(`[SpendingCap] User ${user.email}: ${percentUsed.toFixed(1)}% of $${user.spending_cap} cap - sending ${highestThreshold}% alert`);
+  console.log(`[SpendingCap] User ${user.email}: ${percentUsed.toFixed(1)}% of $${budget} budget - sending ${highestThreshold}% alert`);
 
-  await sendSpendingAlert(user as UserWithCap, highestThreshold, monthlyTotal);
+  await sendSpendingAlert(user as UserWithCap, highestThreshold, monthlyTotal, budget, isSelfCap);
 
   // Update alerts_sent to include all newly crossed thresholds
   const updatedAlertsSent = [
@@ -111,7 +118,9 @@ function parseAlertsData(
 async function sendSpendingAlert(
   user: UserWithCap,
   threshold: SpendingThreshold,
-  currentSpend: number
+  currentSpend: number,
+  budget: number,
+  isSelfCap: boolean
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('[SpendingCap] RESEND_API_KEY not configured, skipping email');
@@ -121,15 +130,22 @@ async function sendSpendingAlert(
   const resend = new Resend(process.env.RESEND_API_KEY);
   const dashboardUrl = `${process.env.AUTH0_BASE_URL}/dashboard?tab=billing`;
 
-  const isOverCap = threshold >= 100;
-  const subject = isOverCap
-    ? `Spending Alert: Your $${user.spending_cap} monthly cap has been exceeded`
-    : `Spending Alert: You've reached ${threshold}% of your $${user.spending_cap} monthly cap`;
+  const limitWord = isSelfCap ? 'cap' : 'budget';
+  const raiseHint = isSelfCap ? 'raise or remove the cap' : 'upgrade to a paid plan';
+  const isFrozen = threshold >= 100;
+  const isThrottled = threshold >= 90 && threshold < 100;
+  const subject = isFrozen
+    ? `Spending ${limitWord} reached: compute frozen on your account`
+    : isThrottled
+      ? `90% of your spending ${limitWord}: compute throttled`
+      : `You've reached ${threshold}% of your $${budget} monthly ${limitWord}`;
 
-  const statusColor = isOverCap ? '#dc2626' : threshold >= 90 ? '#f59e0b' : '#1eb182';
-  const statusText = isOverCap
-    ? 'Your spending has exceeded your monthly cap. Your services will continue running.'
-    : `You've used ${threshold}% of your monthly spending cap.`;
+  const statusColor = isFrozen ? '#dc2626' : isThrottled ? '#f59e0b' : '#1eb182';
+  const statusText = isFrozen
+    ? `Your spend has reached your monthly ${limitWord}. Compute on your account is now frozen: running work drains and new workloads are rejected until your usage resets next cycle or you ${raiseHint}. Stored data is not deleted and keeps billing.`
+    : isThrottled
+      ? `You have reached 90% of your monthly ${limitWord}. Compute on your account is now throttled to a minimum until your spend drops or you ${raiseHint}.`
+      : `You've used ${threshold}% of your monthly ${limitWord}. Compute is throttled at 90% and frozen at 100%.`;
 
   try {
     await resend.emails.send({
@@ -155,20 +171,21 @@ async function sendSpendingAlert(
                 <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #333;">$${currentSpend.toFixed(2)}</td>
               </tr>
               <tr>
-                <td style="padding: 8px 0; color: #666;">Monthly Cap</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #333;">$${user.spending_cap.toFixed(2)}</td>
+                <td style="padding: 8px 0; color: #666;">Monthly ${isSelfCap ? 'Cap' : 'Budget'}</td>
+                <td style="padding: 8px 0; text-align: right; font-weight: 600; color: #333;">$${budget.toFixed(2)}</td>
               </tr>
               <tr style="border-top: 1px solid #e5e7eb;">
                 <td style="padding: 8px 0; color: #666;">Usage</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: 600; color: ${statusColor};">${Math.round((currentSpend / user.spending_cap) * 100)}%</td>
+                <td style="padding: 8px 0; text-align: right; font-weight: 600; color: ${statusColor};">${Math.round((currentSpend / budget) * 100)}%</td>
               </tr>
             </table>
           </div>
 
-          ${isOverCap ? `
-          <p style="color: #666; line-height: 1.6; background-color: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid #dc2626;">
-            <strong>Note:</strong> Your services will continue running. This is a soft cap for awareness.
-            You can adjust your cap or disable it in your dashboard.
+          ${isFrozen || isThrottled ? `
+          <p style="color: #666; line-height: 1.6; background-color: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid ${statusColor};">
+            <strong>Note:</strong> ${isSelfCap
+              ? 'This cap enforces compute limits. Raise or disable it in your dashboard to restore full capacity.'
+              : 'This is your free-tier budget. Upgrade to a paid plan in your dashboard to lift the limit.'} Stored data keeps billing until you remove it.
           </p>
           ` : ''}
 
@@ -180,7 +197,9 @@ async function sendSpendingAlert(
           </div>
 
           <p style="color: #999; font-size: 14px;">
-            You can adjust or disable your spending cap at any time from your Hopsworks dashboard.
+            ${isSelfCap
+              ? 'You can adjust or disable your spending cap at any time from your Hopsworks dashboard.'
+              : 'Upgrade to a paid plan any time from your Hopsworks dashboard to lift the free-tier limit.'}
           </p>
         </div>
       `,
