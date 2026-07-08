@@ -14,6 +14,7 @@ interface AuthContextType {
   syncing: boolean;
   synced: boolean;
   syncResult: SyncResult | null;
+  emailVerificationRequired: boolean;
   signIn: (corporateRef?: string, promoCode?: string, mode?: 'login' | 'signup') => void;
   signOut: () => void;
 }
@@ -26,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState(false);
 
   useEffect(() => {
     if (!user || isLoading) {
@@ -70,6 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .then(res => {
         if (!res.ok) {
           return res.json().then(errData => {
+            if (errData.emailVerificationRequired) {
+              setEmailVerificationRequired(true);
+            }
             throw new Error(errData.error || `Sync failed: ${res.status}`);
           });
         }
@@ -116,6 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSynced(false);
     setSyncing(false);
     setSyncResult(null);
+    setEmailVerificationRequired(false);
     router.push('/api/auth/logout');
   };
 
@@ -126,6 +132,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncing,
       synced,
       syncResult,
+      emailVerificationRequired,
       signIn,
       signOut
     }}>

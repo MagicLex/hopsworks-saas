@@ -171,7 +171,7 @@ function StatusBox({
 }
 
 export default function Dashboard() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, emailVerificationRequired } = useAuth();
   const { billing: contextBilling, loading: contextBillingLoading, refetch: refetchBilling } = useBilling();
   const { pricing } = usePricing();
   const router = useRouter();
@@ -516,6 +516,38 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
+
+  if (emailVerificationRequired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-5">
+        <div className="max-w-md w-full bg-white rounded-lg border p-8 text-center flex flex-col gap-4">
+          <h1 className="text-xl font-semibold">Verify your email</h1>
+          <p className="text-sm text-muted-foreground">
+            We sent a verification link to <span className="font-medium">{user?.email}</span>.
+            Click it, then continue. Check your spam folder if you don&apos;t see it.
+          </p>
+          <button
+            onClick={() => {
+              // Re-run the Auth0 authorize round trip: the live Auth0 session
+              // reissues tokens with the refreshed email_verified claim, no
+              // credentials prompt needed.
+              sessionStorage.removeItem('user_synced_session');
+              window.location.href = '/api/auth/login';
+            }}
+            className="w-full py-2.5 rounded bg-primary text-white text-sm font-medium hover:opacity-90"
+          >
+            I verified my email, continue
+          </button>
+          <button
+            onClick={() => signOut()}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            Use a different account
+          </button>
+        </div>
       </div>
     );
   }
