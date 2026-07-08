@@ -119,10 +119,20 @@ export async function suspendUser(
       accountOwnerEmail = owner?.email || null;
     }
 
-    // Update Supabase status
+    // Update Supabase status; persist the reason so anti-abuse checks can
+    // distinguish abuse suspensions from billing suspensions
+    const { data: currentMeta } = await supabase
+      .from('users')
+      .select('metadata')
+      .eq('id', userId)
+      .single() as { data: { metadata: Record<string, unknown> | null } | null };
+
     const { error: supabaseError } = await supabase
       .from('users')
-      .update({ status: 'suspended' })
+      .update({
+        status: 'suspended',
+        metadata: { ...(currentMeta?.metadata ?? {}), suspension_reason: reason || 'unknown' }
+      })
       .eq('id', userId);
 
     if (supabaseError) {
@@ -251,12 +261,21 @@ export async function reactivateUser(
       accountOwnerEmail = owner?.email || null;
     }
 
-    // Update Supabase status and clear any lingering downgrade deadline
+    // Update Supabase status, clear any lingering downgrade deadline and
+    // suspension reason (a reactivated user's IP must not stay flagged)
+    const { data: currentMeta } = await supabase
+      .from('users')
+      .select('metadata')
+      .eq('id', userId)
+      .single() as { data: { metadata: Record<string, unknown> | null } | null };
+    const { suspension_reason: _dropped, ...cleanedMeta } = currentMeta?.metadata ?? {};
+
     const { error: supabaseError } = await supabase
       .from('users')
       .update({
         status: 'active',
-        downgrade_deadline: null
+        downgrade_deadline: null,
+        metadata: cleanedMeta
       })
       .eq('id', userId);
 

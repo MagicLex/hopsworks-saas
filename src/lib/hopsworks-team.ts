@@ -13,86 +13,99 @@ interface HopsworksCredentials {
   apiKey: string;
 }
 
+export type ProjectRole = 'Data owner' | 'Data scientist' | 'Observer';
+
+// errorCode for ProjectErrorCode.TEAM_MEMBER_ALREADY_EXISTS (member exists with a different role)
+const TEAM_MEMBER_ALREADY_EXISTS = 150024;
+
 /**
- * Add a user to a project with a specific role
- * Uses the admin endpoint POST /admin/projects/add-to-projects
+ * Ensure a user is a member of a project with the given role.
+ * POST /admin/projects/{projectId}/members; if the user is already a member
+ * with a different role, falls back to PUT to update the role.
  */
 export async function addUserToProject(
   credentials: HopsworksCredentials,
   projectName: string,
   hopsworksUserId: number,
-  role: 'Data owner' | 'Data scientist' = 'Data scientist'
+  role: ProjectRole = 'Data scientist'
 ): Promise<void> {
-  // VALIDATE PROJECT EXISTS FIRST
   const project = await validateProject(credentials, projectName);
   if (!project) {
     throw new Error(`Project '${projectName}' does not exist in Hopsworks`);
   }
 
-  // Get user details by ID (correct API endpoint)
-  const { getHopsworksUserById } = await import('./hopsworks-api');
-  const userData = await getHopsworksUserById(credentials, hopsworksUserId);
-
-  if (!userData) {
-    throw new Error(`User ${hopsworksUserId} not found in Hopsworks`);
-  }
-
-  const userEmail = userData.email;
-  const username = userData.username;
-
-  console.log(`Adding user ${username} (ID: ${hopsworksUserId}, email: ${userEmail}) to project ${projectName} (id: ${project.id}) as ${role}`);
-
-  // Use the admin endpoint to add user to projects
   const response = await fetch(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/projects/add-to-projects`,
+    `${credentials.apiUrl}${ADMIN_API_BASE}/projects/${project.id}/members`,
     {
       method: 'POST',
       headers: {
         'Authorization': `ApiKey ${credentials.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        username: username,
-        role: role,
-        projectIds: [project.id]
-      })
+      body: JSON.stringify({ userId: hopsworksUserId, role })
+    }
+  );
+
+  if (response.ok) {
+    console.log(`Added user ${hopsworksUserId} to ${projectName} (id: ${project.id}) as ${role}`);
+    return;
+  }
+
+  const errorText = await response.text();
+  let errorCode: number | undefined;
+  try {
+    errorCode = JSON.parse(errorText).errorCode;
+  } catch { /* non-JSON error body */ }
+
+  if (errorCode === TEAM_MEMBER_ALREADY_EXISTS) {
+    console.log(`User ${hopsworksUserId} already in ${projectName} with another role, updating to ${role}`);
+    await updateMemberRole(credentials, project.id, hopsworksUserId, role);
+    return;
+  }
+
+  console.error(`Failed to add user ${hopsworksUserId} to project ${projectName}:`, errorText);
+  throw new Error(`Failed to add user to project: ${response.statusText} - ${errorText}`);
+}
+
+/**
+ * Update a member's role. PUT /admin/projects/{projectId}/members/{userId}
+ */
+export async function updateMemberRole(
+  credentials: HopsworksCredentials,
+  projectId: number,
+  hopsworksUserId: number,
+  role: ProjectRole
+): Promise<void> {
+  const response = await fetch(
+    `${credentials.apiUrl}${ADMIN_API_BASE}/projects/${projectId}/members/${hopsworksUserId}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Authorization': `ApiKey ${credentials.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ role })
     }
   );
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`Failed to add user to project:`, errorText);
-
-    // Check if it's a project not found error
-    if (errorText.includes('404') || errorText.includes('Not Found')) {
-      throw new Error(`Project '${projectName}' not found or inaccessible`);
-    }
-
-    // Check if user is already a member
-    if (errorText.includes('already') || errorText.includes('exist')) {
-      console.log(`User ${username} is already a member of ${projectName}`);
-      return; // Not an error if already member
-    }
-
-    throw new Error(`Failed to add user to project: ${response.statusText} - ${errorText}`);
+    throw new Error(`Failed to update role for user ${hopsworksUserId} in project ${projectId}: ${response.statusText} - ${errorText}`);
   }
-
-  console.log(`Successfully added ${username} to ${projectName} as ${role}`);
+  console.log(`Updated user ${hopsworksUserId} role to ${role} in project ${projectId}`);
 }
 
 /**
- * Remove a member from a project.
- * Uses DELETE /project/{projectId}/projectMembers/{email} — the project-scoped
- * endpoint accepts the admin API key (verified against prod 2026-06-11).
- * Idempotent: 404 (not a member) is treated as success.
+ * Remove a member from a project. DELETE /admin/projects/{projectId}/members/{userId}
+ * Idempotent: a 404 (not a member) is treated as success.
  */
 export async function removeUserFromProject(
   credentials: HopsworksCredentials,
   projectId: number,
-  memberEmail: string
+  hopsworksUserId: number
 ): Promise<void> {
   const response = await fetch(
-    `${credentials.apiUrl}${HOPSWORKS_API_BASE}/project/${projectId}/projectMembers/${encodeURIComponent(memberEmail)}`,
+    `${credentials.apiUrl}${ADMIN_API_BASE}/projects/${projectId}/members/${hopsworksUserId}`,
     {
       method: 'DELETE',
       headers: {
@@ -103,10 +116,11 @@ export async function removeUserFromProject(
 
   if (!response.ok && response.status !== 404) {
     const errorText = await response.text();
-    throw new Error(`Failed to remove ${memberEmail} from project ${projectId}: ${response.statusText} - ${errorText}`);
+    throw new Error(`Failed to remove user ${hopsworksUserId} from project ${projectId}: ${response.statusText} - ${errorText}`);
   }
-  console.log(`Removed ${memberEmail} from project ${projectId}`);
+  console.log(`Removed user ${hopsworksUserId} from project ${projectId}`);
 }
+
 
 // createGroupMapping removed - use addUserToProject which uses admin endpoint
 

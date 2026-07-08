@@ -4,6 +4,8 @@ import { useRouter } from 'next/router';
 import { Edit2, Server } from 'lucide-react';
 import { toast } from 'sonner';
 import Navbar from '@/components/Navbar';
+import AnalyticsTab from '@/components/admin/AnalyticsTab';
+import HealthTab from '@/components/admin/HealthTab';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -430,15 +432,16 @@ export default function AdminPage() {
               });
 
               if (assignResponse.ok) {
-                console.log(`Cluster assigned successfully for ${email}`);
+                toast.success(`Cluster assigned for ${email}`);
               } else {
                 const assignData = await assignResponse.json();
-                console.error(`Failed to assign cluster: ${assignData.error}`);
+                toast.error(`Failed to assign cluster for ${email}: ${assignData.error}`);
               }
 
               fetchUsers(); // Refresh after assignment
             } catch (error) {
               console.error('Failed to assign cluster:', error);
+              toast.error(`Failed to assign cluster for ${email}`);
             }
           }, 5000);
         } else {
@@ -488,6 +491,8 @@ export default function AdminPage() {
             <TabsList className="mb-6">
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="clusters">Clusters</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="health">Health</TabsTrigger>
             </TabsList>
 
             <TabsContent value="users">
@@ -840,6 +845,14 @@ export default function AdminPage() {
                   </div>
                 )}
               </Card>
+            </TabsContent>
+
+            <TabsContent value="analytics">
+              <AnalyticsTab />
+            </TabsContent>
+
+            <TabsContent value="health">
+              <HealthTab />
             </TabsContent>
           </Tabs>
         </div>

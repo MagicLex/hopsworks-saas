@@ -28,7 +28,7 @@ export default function Home() {
   const [corporateError, setCorporateError] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
-  const { user, loading, synced, syncResult } = useAuth();
+  const { user, loading, synced } = useAuth();
   const router = useRouter();
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
 
@@ -79,7 +79,6 @@ export default function Home() {
                 ? `https://logo.clearbit.com/${data.companyDomain}`
                 : data.companyLogo,
             );
-            sessionStorage.setItem('corporate_ref', ref);
           }
         })
         .catch((err) => {
@@ -101,7 +100,6 @@ export default function Home() {
         .then((data) => {
           if (data.valid) {
             setPromoCode(data.promoCode);
-            sessionStorage.setItem('promo_code', data.promoCode);
           } else {
             setPromoError(data.error || 'Invalid promotional code');
             window.history.replaceState({}, '', window.location.pathname);
@@ -120,13 +118,9 @@ export default function Home() {
     if (loading || (user && !synced)) return;
 
     if (user && synced) {
-      if (syncResult?.isSuspended) {
-        router.push('/billing-setup');
-      } else if (syncResult?.needsPayment) {
-        router.push('/billing-setup');
-      } else {
-        router.push('/dashboard');
-      }
+      // The onboarding gate reroutes to the right step (billing-setup,
+      // verification, provisioning) — always aim at the dashboard.
+      router.push('/dashboard');
     } else if (!user) {
       posthog.capture('landing_page_viewed', {
         hasCorporateRef: !!corporateRef,
@@ -134,7 +128,7 @@ export default function Home() {
         source: 'homepage',
       });
     }
-  }, [user, loading, synced, syncResult, router, corporateRef, promoCode]);
+  }, [user, loading, synced, router, corporateRef, promoCode]);
 
   const handleDeploy = (deployment: DeploymentOption) => {
     if (deployment.buttonStyle === 'enterprise') {

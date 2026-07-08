@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { alertBillingFailure } from '../../../lib/error-handler';
 import { requireCronAuth } from '../../../lib/internal-auth';
+import { calculateCreditsUsed } from '@/config/billing-rates';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-06-30.basil'
@@ -80,9 +81,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Idempotency key base - ensures retry won't double-bill
         const idempotencyBase = `usage_${usage.id}`;
 
-        // Report compute credits (send as centi-credits for Stripe integer requirement)
-        if (usage.total_credits > 0) {
-          const centiCredits = Math.round(usage.total_credits * 100); // 1.11 credits → 111 centi-credits
+        // Report compute credits (compute only: cpu/gpu/ram). Storage is billed via the
+        // storage_*_gb meters below, so it must NOT sit in this credit total too, or every
+        // GB gets charged twice (once as credits, once as a storage meter).
+        const computeCredits = calculateCreditsUsed({
+          cpuHours: usage.opencost_cpu_hours || 0,
+          gpuHours: usage.opencost_gpu_hours || 0,
+          ramGbHours: usage.opencost_ram_gb_hours || 0,
+        });
+        if (computeCredits > 0) {
+          const centiCredits = Math.round(computeCredits * 100); // 1.11 credits → 111 centi-credits
           const cpuUsageRecord = await stripe.billing.meterEvents.create({
             event_name: 'compute_credits',
             payload: {

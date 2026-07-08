@@ -3,6 +3,7 @@ import { requireActiveSession } from '@/lib/require-active-session';
 import { createClient } from '@supabase/supabase-js';
 import { sendUserActivated, sendPlanUpdated, sendMarketingUpdated } from '../../../lib/marketing-webhooks';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
+import { hostingSignupCanGoFree } from '../../../lib/asn-check';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Get current user state
     const { data: user, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('email, billing_mode, marketing_consent, terms_accepted_at, account_owner_id')
+      .select('email, billing_mode, marketing_consent, terms_accepted_at, account_owner_id, stripe_customer_id, metadata')
       .eq('id', userId)
       .single();
 
@@ -46,6 +47,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Team members cannot change billing
     if (user.account_owner_id && plan) {
       return res.status(400).json({ error: 'Team members cannot select a plan' });
+    }
+
+    // Hosting-ASN signups must validate a payment method before the free tier
+    if (plan === 'free') {
+      const canGoFree = await hostingSignupCanGoFree(supabaseAdmin, userId, user);
+      if (!canGoFree) {
+        console.log(`[ASN check] Free plan blocked for ${user.email} (hosting ASN, no validated card)`);
+        return res.status(403).json({
+          error: 'Signups from datacenter networks need a payment method on file before using the free tier. Add a card (no charges) to continue.',
+          requiresPaymentValidation: true
+        });
+      }
     }
 
     const oldBillingMode = user.billing_mode;
@@ -122,9 +135,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error('[Marketing] Webhook error in accept-terms:', err);
     });
 
-    // Assign cluster for free users who just selected free plan
+    // Assign cluster for free users. Not gated on the NULL->free transition:
+    // a failed first assignment (no cluster available) must be retryable on the
+    // next attempt, and assignUserToCluster already short-circuits when the
+    // user is assigned.
     let clusterAssigned = false;
-    if (plan === 'free' && !oldBillingMode) {
+    if (finalPlan === 'free' && !user.account_owner_id) {
       const clusterResult = await assignUserToCluster(supabaseAdmin, userId);
       clusterAssigned = clusterResult.success;
       if (clusterResult.success) {

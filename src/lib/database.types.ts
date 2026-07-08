@@ -18,6 +18,8 @@ export interface Database {
           billing_mode?: string | null;
           stripe_customer_id?: string | null;
           stripe_test_customer_id?: string | null;
+          spending_cap?: number | null;
+          enforcement_state?: 'normal' | 'throttled' | 'frozen';
           is_admin?: boolean;
           feature_flags?: any;
           hopsworks_username?: string | null;
@@ -36,6 +38,9 @@ export interface Database {
           project_name: string;
           namespace: string;
           status: 'active' | 'inactive';
+          capacity_tier?: 'small' | 'medium' | 'large' | 'exempt';
+          applied_quota_tier?: 'small' | 'medium' | 'large' | 'exempt' | 'throttled' | 'frozen' | null;
+          quota_updated_at?: string | null;
           last_seen_at: string;
           created_at: string;
           updated_at: string;

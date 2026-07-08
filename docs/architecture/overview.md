@@ -13,35 +13,53 @@
 
 ## Key Flows
 
-### Authentication & Sync Architecture
+### Authentication, Sync & Onboarding State Machine
 
-The app uses a centralized sync flow via `AuthContext`:
+The app uses a centralized sync flow via `AuthContext`, then routes through a
+server-resolved onboarding state:
 
 1. **Auth0 callback** → user exists in AuthContext
-2. **AuthContext** sets `syncing = true`, calls `/api/auth/sync-user`
-3. **sync-user** creates/updates user in DB, returns `{ needsPayment, isSuspended, isTeamMember }`
-4. **AuthContext** sets `synced = true` with `syncResult`
-5. **Pages** wait for `synced` before making routing decisions
-6. **BillingContext** waits for `synced` before fetching `/api/billing`
+2. **AuthContext** sets `syncing = true`, calls `/api/auth/sync-user` (creates/updates the DB user)
+3. **OnboardingContext** fetches `GET /api/user/onboarding` once synced. The
+   server derives the state with `resolveOnboardingState()` (`src/lib/onboarding.ts`)
+   from the Auth0 session (`email_verified`), the `users` row
+   (`deleted_at`, `status`, `terms_accepted_at`, `billing_mode`,
+   `stripe_subscription_id`) and `user_hopsworks_assignments`. It is never stored.
+4. **OnboardingGate** (`_app.tsx`) renders the current step; pages only mount
+   when the state is `ready`, so page hooks never fire against a half-created account.
+5. **BillingContext / CorporateContext** wait for the onboarding resolution and
+   skip fetching when no account row exists.
 
-This prevents race conditions where pages redirect before the user exists in DB.
+States: `unauthenticated → email_unverified → needs_account → needs_payment
+(postpaid only) → assigning_cluster → ready`, plus `suspended` and `deleted`
+branches. `needs_account`, `needs_payment` and `suspended` route to
+`/billing-setup`; `email_unverified` and `assigning_cluster` render dedicated
+gate steps (`assigning_cluster` polls bounded, with a retry that POSTs
+`{action: "retry_cluster"}` to `/api/user/onboarding`, an idempotent call).
+
+Corporate/promo refs arrive as query params on `/api/auth/{login,signup}` and
+are persisted in the `hw_signup_refs` httpOnly cookie, consumed and cleared by
+sync-user at account creation. They survive tab changes and the
+email-verification detour.
 
 ### User Signup (Self-Service SaaS - Postpaid)
 1. User clicks signup on landing page → Auth0 hosted login
-2. Auth0 callback → `/api/auth/sync-user` creates user with `billing_mode = 'postpaid'`
-3. `syncResult.needsPayment = true` → redirect to `/billing-setup`
-4. User accepts terms and adds payment method via Stripe Checkout
-5. Stripe webhook creates metered subscription
-6. User redirected to `/dashboard`
-7. Cluster assignment + Hopsworks user creation happens during sync-user
+2. Auth0 callback → `/api/auth/sync-user` creates the user (`billing_mode = NULL`)
+3. Onboarding state `needs_account` → `/billing-setup`: terms + plan choice
+4. User adds a payment method via Stripe Checkout → webhook sets
+   `billing_mode = 'postpaid'` and creates the metered subscription
+5. Cluster assignment triggered by the webhook; the gate shows
+   `assigning_cluster` until the assignment row exists
+6. State `ready` → dashboard
 
 ### Prepaid Signup (Promo Code)
 1. User arrives with `?promo=PROMO_CODE`
-2. Promo code stored in sessionStorage, validated via `/api/auth/validate-promo`
-3. Auth0 signup → `/api/auth/sync-user` with promo code
+2. Code validated via `/api/auth/validate-promo`, passed to `/api/auth/signup`
+   as a query param, persisted in the `hw_signup_refs` cookie
+3. Auth0 signup → `/api/auth/sync-user` reads the cookie
 4. User created with `billing_mode = 'prepaid'`
-5. `syncResult.needsPayment = false` → redirect to `/billing-setup` for terms only
-6. User accepts terms → redirect to `/dashboard`
+5. State `needs_account` → `/billing-setup` for terms only
+6. User accepts terms → cluster assigned → dashboard
 7. No Stripe payment required
 
 ### Corporate (Prepaid) Signup
@@ -153,7 +171,7 @@ This prevents race conditions where pages redirect before the user exists in DB.
 ## Security
 - All API routes require Auth0 sessions; admin routes enforce `is_admin`.
 - Supabase service-role key enables server-to-server access; never expose client-side.
-- Hopsworks API keys and kubeconfigs are stored as text in Supabase—access restricted to admin functions and encrypted at rest by Supabase.
+- Hopsworks API keys and kubeconfigs are stored as text in Supabase: access restricted to admin functions and encrypted at rest by Supabase.
 - **OpenCost is not exposed externally**; all calls go through Kubernetes API proxying.
 - Team members inherit billing but cannot view Stripe data.
 

@@ -12,7 +12,6 @@ interface ClusterAccessStatusProps {
   billingMode?: string;
   clusterName?: string;
   loading?: boolean;
-  reloadProgress?: number;
   isTeamMember?: boolean;
 }
 
@@ -52,7 +51,6 @@ export default function ClusterAccessStatus({
   billingMode,
   clusterName,
   loading = false,
-  reloadProgress = 0,
   isTeamMember = false,
 }: ClusterAccessStatusProps) {
   if (loading || billingMode === undefined) {
@@ -76,36 +74,6 @@ export default function ClusterAccessStatus({
         <div className="text-sm">
           Connected to: {clusterName || 'Hopsworks Cluster'}
         </div>
-      </StatusBox>
-    );
-  }
-
-  if ((billingMode === 'prepaid' || billingMode === 'free') && !hasCluster) {
-    return (
-      <StatusBox variant="info" icon={<AlertTriangle size={20} />}>
-        <div className="font-semibold mb-2">Cluster Setup In Progress</div>
-        <div className="text-sm mb-3">
-          Your cluster is being provisioned. This typically takes a few minutes.
-          If you continue to see this message, please contact support.
-        </div>
-
-        {reloadProgress > 0 && (
-          <div className="mt-3">
-            <div className="text-xs font-mono mb-2">
-              Checking status... {Math.floor(reloadProgress)}%
-            </div>
-            <div className="w-full h-4 bg-quartz-label-blue-shade2 border-2 border-quartz-label-blue rounded overflow-hidden">
-              <div
-                className="h-full bg-quartz-label-blue transition-all duration-100 ease-linear"
-                style={{
-                  width: `${reloadProgress}%`,
-                  backgroundImage:
-                    'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.2) 10px, rgba(255,255,255,.2) 20px)',
-                }}
-              />
-            </div>
-          </div>
-        )}
       </StatusBox>
     );
   }

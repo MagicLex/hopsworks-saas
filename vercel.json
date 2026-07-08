@@ -9,12 +9,16 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/sync-projects",
+      "path": "/api/cron/check-data-integrity",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/reconcile-billing",
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cron/check-data-integrity",
-      "schedule": "0 6 * * *"
+      "path": "/api/cron/report-prepaid-usage",
+      "schedule": "0 7 1 * *"
     }
   ],
   "functions": {
@@ -24,10 +28,13 @@
     "src/pages/api/billing/sync-stripe.ts": {
       "maxDuration": 60
     },
-    "src/pages/api/cron/sync-projects.ts": {
-      "maxDuration": 120
-    },
     "src/pages/api/cron/check-data-integrity.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/cron/reconcile-billing.ts": {
+      "maxDuration": 60
+    },
+    "src/pages/api/cron/report-prepaid-usage.ts": {
       "maxDuration": 60
     }
   }

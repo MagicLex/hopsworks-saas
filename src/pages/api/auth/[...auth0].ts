@@ -1,17 +1,6 @@
-import { handleAuth, handleLogin, handleCallback, handleLogout } from '@auth0/nextjs-auth0';
-import { NextApiRequest } from 'next';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+import { handleAuth, handleLogin, handleLogout } from '@auth0/nextjs-auth0';
+import { NextApiRequest, NextApiResponse } from 'next';
+import { appendSignupRefsCookie } from '@/lib/signup-refs';
 
 // Validate returnTo to prevent open redirect attacks
 function validateReturnTo(returnTo: string | string[] | undefined): string {
@@ -31,17 +20,38 @@ function validateReturnTo(returnTo: string | string[] | undefined): string {
   return returnTo;
 }
 
+// Corporate/promo refs arrive as query params on /api/auth/{login,signup} and
+// are persisted in an httpOnly cookie before the Auth0 round trip. sync-user
+// reads the cookie at account creation — the refs survive tab changes and the
+// email-verification detour, unlike the old sessionStorage relay.
+function captureRefs(req: NextApiRequest, res: NextApiResponse) {
+  const corporateRef = typeof req.query.corporate_ref === 'string' ? req.query.corporate_ref : undefined;
+  const promoCode = typeof req.query.promo === 'string' ? req.query.promo : undefined;
+  if (corporateRef || promoCode) {
+    appendSignupRefsCookie(res, { corporateRef, promoCode });
+  }
+}
+
 export default handleAuth({
-  signup: handleLogin({
-    authorizationParams: {
-      screen_hint: 'signup'
-    },
-    getLoginState: (req: NextApiRequest) => {
-      return {
-        returnTo: validateReturnTo(req.query.returnTo)
-      };
-    }
-  }),
+  login: async (req: NextApiRequest, res: NextApiResponse) => {
+    captureRefs(req, res);
+    return handleLogin(req, res, {
+      getLoginState: (r: NextApiRequest) => ({
+        returnTo: validateReturnTo(r.query.returnTo)
+      })
+    });
+  },
+  signup: async (req: NextApiRequest, res: NextApiResponse) => {
+    captureRefs(req, res);
+    return handleLogin(req, res, {
+      authorizationParams: {
+        screen_hint: 'signup'
+      },
+      getLoginState: (r: NextApiRequest) => ({
+        returnTo: validateReturnTo(r.query.returnTo)
+      })
+    });
+  },
   logout: handleLogout({
     returnTo: process.env.AUTH0_BASE_URL
   })

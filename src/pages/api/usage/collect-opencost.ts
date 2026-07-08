@@ -23,6 +23,7 @@ type ProjectBreakdownEntry = {
     ramGBHours: number;
     onlineStorageGB: number;
     offlineStorageGB: number;
+    networkEgressGB?: number;
     hourlyCost: number;
     processedAt: string;
   };
@@ -55,6 +56,18 @@ const supabaseAdmin = createClient(
     }
   }
 );
+
+// Surface billing-impacting anomalies loudly. Silent drops and zeroed usage are lost
+// revenue: a broken Prometheus scrape zeroes everyone, so it must page, not just log.
+async function sendBillingAlert(text: string) {
+  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+  if (!webhookUrl) return;
+  await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).catch(err => console.error('[collect-opencost] Slack alert failed:', err));
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!requireCronAuth(req, res)) return;
@@ -210,7 +223,10 @@ async function collectOpenCostMetrics() {
     failed: 0,
     errors: [] as string[],
     namespaces: [] as any[],
-    clusters: [] as any[]
+    clusters: [] as any[],
+    unattributedCost: 0,
+    unattributedNamespaces: [] as string[],
+    negativeNamespaces: [] as string[]
   };
 
   // Process each cluster
@@ -222,6 +238,28 @@ async function collectOpenCostMetrics() {
     try {
       // Initialize OpenCost direct client for this cluster
       opencost = new OpenCostDirect(cluster.kubeconfig);
+
+      // Missed-hour detection: there is no backfill, so a skipped run loses that hour.
+      // Compare the per-cluster watermark to now and alert on any gap (lost revenue).
+      const currentHour = new Date(now);
+      currentHour.setUTCMinutes(0, 0, 0);
+      const { data: watermark } = await supabaseAdmin
+        .from('metering_watermark')
+        .select('last_processed_hour')
+        .eq('cluster_id', cluster.id)
+        .single();
+      if (watermark?.last_processed_hour) {
+        const last = new Date(watermark.last_processed_hour);
+        const gapHours = Math.round((currentHour.getTime() - last.getTime()) / 3_600_000);
+        if (gapHours > 1) {
+          const missed = gapHours - 1;
+          console.error(`[${cluster.name}] metering gap: ${missed} hour(s) missed since ${last.toISOString()}`);
+          await sendBillingAlert(
+            `:rotating_light: *OpenCost metering* — cluster ${cluster.name} missed ${missed} hour(s) of collection ` +
+              `(last ${last.toISOString()}, now ${currentHour.toISOString()}). That usage is not recovered.`,
+          );
+        }
+      }
 
       // Get hourly allocations from OpenCost using kubectl exec
       const allocations = await opencost.getOpenCostAllocations('1h');
@@ -343,15 +381,13 @@ async function collectOpenCostMetrics() {
       }
 
       if (!userId) {
-        // Try to identify what type of namespace this is
-        let namespaceType = 'user project';
-        if (namespace.includes('admin') || namespace === 'hopsworks') {
-          namespaceType = 'admin/system';
-        }
-        
-        console.warn(`[${cluster.name}] No user found for namespace ${namespace} (type: ${namespaceType})`);
-        clusterResults.errors.push(`Namespace ${namespace}: No user mapping found`);
+        // Unmapped namespace with real cost is dropped revenue, not a silent skip.
+        const droppedCost = allocation.totalCost || 0;
+        console.warn(`[${cluster.name}] No user found for namespace ${namespace}: $${droppedCost.toFixed(4)} unattributed`);
+        clusterResults.errors.push(`Namespace ${namespace}: No user mapping found ($${droppedCost.toFixed(4)} dropped)`);
         clusterResults.failed++;
+        aggregatedResults.unattributedCost += droppedCost;
+        aggregatedResults.unattributedNamespaces.push(`${cluster.name}/${namespace}`);
         continue;
       }
 
@@ -371,6 +407,7 @@ async function collectOpenCostMetrics() {
           fix: 'Add prometheus.io/scrape annotation to OpenCost service or add opencost job to Prometheus scrape_configs'
         });
         clusterResults.errors.push(`Namespace ${namespace}: OpenCost returned negative values (Prometheus scrape misconfiguration)`);
+        aggregatedResults.negativeNamespaces.push(`${cluster.name}/${namespace}`);
       }
 
       // Sanitize to prevent data corruption while issue is being fixed
@@ -384,7 +421,13 @@ async function collectOpenCostMetrics() {
       const offlineStorageGB = offlineStorageBytes / (1024 * 1024 * 1024);
       const onlineStorageGB = onlineStorageBytes / (1024 * 1024 * 1024);
 
-      // Calculate cost using our rates
+      // Network egress: captured for visibility only, NOT billed. networkTransferBytes
+      // is gross pod egress and includes intra-cluster traffic; billing it raw would
+      // overcharge. Real egress billing needs OpenCost's network cost model (infra).
+      const networkEgressGB = Math.max(0, (allocation.networkTransferBytes || 0) / (1024 * 1024 * 1024));
+
+      // Calculate cost using our rates. Storage is pro-rated; egress is deliberately
+      // excluded until the network cost model isolates real egress.
       const creditsUsed = calculateCreditsUsed({
         cpuHours,
         gpuHours,
@@ -411,6 +454,7 @@ async function collectOpenCostMetrics() {
       let totalCpuHours = existingUsage?.opencost_cpu_hours || 0;
       let totalGpuHours = existingUsage?.opencost_gpu_hours || 0;
       let totalRamGbHours = existingUsage?.opencost_ram_gb_hours || 0;
+      let totalNetworkEgressGb = existingUsage?.network_egress_gb || 0;
       let totalCredits = existingUsage?.total_credits || 0;
       let totalCost = existingUsage?.total_cost || 0;
 
@@ -418,6 +462,7 @@ async function collectOpenCostMetrics() {
         totalCpuHours = Math.max(0, totalCpuHours - (previousContribution.cpuHours || 0));
         totalGpuHours = Math.max(0, totalGpuHours - (previousContribution.gpuHours || 0));
         totalRamGbHours = Math.max(0, totalRamGbHours - (previousContribution.ramGBHours || 0));
+        totalNetworkEgressGb = Math.max(0, totalNetworkEgressGb - (previousContribution.networkEgressGB || 0));
         const previousHourlyCost =
           previousContribution.hourlyCost || computeHourlyCost(previousContribution);
         totalCost = Math.max(0, totalCost - previousHourlyCost);
@@ -445,6 +490,7 @@ async function collectOpenCostMetrics() {
           ramGBHours,
           onlineStorageGB,
           offlineStorageGB,
+          networkEgressGB,
           hourlyCost: hourlyTotalCost,
           processedAt: nowIso
         }
@@ -460,6 +506,7 @@ async function collectOpenCostMetrics() {
         opencost_ram_gb_hours: totalRamGbHours + ramGBHours,
         online_storage_gb: storageTotals.online,
         offline_storage_gb: storageTotals.offline,
+        network_egress_gb: totalNetworkEgressGb + networkEgressGB,
         total_credits: totalCredits + hourlyTotalCredits,
         total_cost: totalCost + hourlyTotalCost,
         project_breakdown: breakdown,
@@ -767,6 +814,14 @@ async function collectOpenCostMetrics() {
 
       console.log(`[${cluster.name}] Collection completed: ${clusterResults.successful} successful, ${clusterResults.failed} failed`);
 
+      // Advance the watermark to this hour so the next run can detect a gap.
+      await supabaseAdmin
+        .from('metering_watermark')
+        .upsert(
+          { cluster_id: cluster.id, last_processed_hour: currentHour.toISOString(), updated_at: nowIso },
+          { onConflict: 'cluster_id' },
+        );
+
       // Aggregate cluster results
       aggregatedResults.successful += clusterResults.successful;
       aggregatedResults.failed += clusterResults.failed;
@@ -797,6 +852,21 @@ async function collectOpenCostMetrics() {
         await opencost.cleanup();
       }
     }
+  }
+
+  // Loud alert on billing-impacting anomalies this run, so they cannot pass silently.
+  if (aggregatedResults.negativeNamespaces.length > 0) {
+    await sendBillingAlert(
+      `:rotating_light: *OpenCost metering* — ${aggregatedResults.negativeNamespaces.length} namespace(s) returned NEGATIVE values ` +
+        `(Prometheus scrape likely broken, usage zeroed): ${aggregatedResults.negativeNamespaces.slice(0, 10).join(', ')}`,
+    );
+  }
+  if (aggregatedResults.unattributedCost > 0.01) {
+    await sendBillingAlert(
+      `:warning: *OpenCost metering* — $${aggregatedResults.unattributedCost.toFixed(2)} of cost could not be attributed to any ` +
+        `account and was dropped (${aggregatedResults.unattributedNamespaces.length} namespace(s): ` +
+        `${aggregatedResults.unattributedNamespaces.slice(0, 10).join(', ')})`,
+    );
   }
 
   // Check spending caps for all users who had usage processed

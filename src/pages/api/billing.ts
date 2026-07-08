@@ -8,6 +8,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  // Routing decisions (billing-setup redirects) read this response — a
+  // cached body routes the user on a stale state. Never cacheable.
+  res.setHeader('Cache-Control', 'no-store');
 
   try {
     const { month } = req.query;
@@ -463,51 +466,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // Auto-suspend: free user past deadline with >1 project
-    if (user?.billing_mode === 'free' && user?.downgrade_deadline && user?.status !== 'suspended') {
-      const deadline = new Date(user.downgrade_deadline);
-      if (deadline < new Date()) {
-        // Sync projects before counting — user_projects may be stale (last synced at login)
-        try {
-          const syncResult = await syncUserProjects(userId);
-          if (!syncResult.success) {
-            console.error(`[Billing API] Project sync failed for ${userId}: ${syncResult.error} — proceeding with stale data`);
-          }
-        } catch (e) {
-          console.error(`[Billing API] Project sync threw for ${userId}:`, e);
-        }
-
-        // Check project count from our DB — Hopsworks numActiveProjects includes deleted projects
-        let currentProjectCount = 0;
-        try {
-          const { data: activeProjects } = await supabaseAdmin
-            .from('user_projects')
-            .select('project_id')
-            .eq('user_id', userId)
-            .eq('status', 'active');
-          currentProjectCount = activeProjects?.length || 0;
-        } catch (e) {
-          console.error('[Billing API] Failed to get project count for suspension check:', e);
-        }
-
-        if (currentProjectCount > 1) {
-          console.log(`[Billing API] Auto-suspending user ${userId}: deadline passed, still has ${currentProjectCount} projects`);
-          await supabaseAdmin
-            .from('users')
-            .update({ status: 'suspended' })
-            .eq('id', userId);
-          user.status = 'suspended';
-        } else {
-          // User complied - clear deadline
-          console.log(`[Billing API] User ${userId} complied with free tier (${currentProjectCount} projects) - clearing deadline`);
-          await supabaseAdmin
-            .from('users')
-            .update({ downgrade_deadline: null })
-            .eq('id', userId);
-          user.downgrade_deadline = null;
-        }
-      }
-    }
+    // No auto-suspend for the free project limit. maxNumProjects=1 gates new project
+    // creation, and budget enforcement (enforcement_state, applied by the reconciler)
+    // handles spend. Suspension is reserved for abuse and non-payment (admin action),
+    // never for a quota — and the free "1 project" rule is a quota. downgrade_deadline
+    // stays as an informational grace marker (the Stripe re-downgrade guard reads it).
 
     // Prevent caching of billing data
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');

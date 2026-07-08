@@ -36,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Verify the member belongs to this owner's team
       const { data: member } = await supabaseAdmin
         .from('users')
-        .select('id, email, account_owner_id')
+        .select('id, email, account_owner_id, hopsworks_user_id')
         .eq('id', memberId)
         .single();
 
@@ -59,7 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Hopsworks first, DB second: a failed upstream removal must not leave
       // a silent desync where the chip disappears but access remains.
       // Never-synced rows have nothing to remove upstream.
-      if (memberRole.synced_to_hopsworks) {
+      if (memberRole.synced_to_hopsworks && member.hopsworks_user_id) {
         const { data: ownerAssignment } = await supabaseAdmin
           .from('user_hopsworks_assignments')
           .select('hopsworks_clusters!inner(api_url, api_key)')
@@ -74,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         await removeUserFromProject(
           { apiUrl: cluster.api_url, apiKey: cluster.api_key },
           memberRole.project_id,
-          member.email
+          member.hopsworks_user_id
         );
       }
 
