@@ -135,10 +135,12 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
     state === 'needs_payment' || state === 'suspended' || (state === 'needs_account' && detail === 'terms_or_plan');
 
   useEffect(() => {
-    if (!bypass && needsBillingSetup) {
+    // Never route on a stale state: while a refetch is in flight the previous
+    // resolution may already be obsolete (e.g. right after start-free).
+    if (!bypass && !loading && needsBillingSetup) {
       router.replace('/billing-setup');
     }
-  }, [bypass, needsBillingSetup, router]);
+  }, [bypass, loading, needsBillingSetup, router]);
 
   if (bypass) {
     return <>{children}</>;

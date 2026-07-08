@@ -36,6 +36,7 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [stalled, setStalled] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const pollCount = useRef(0);
+  const prevPathname = useRef(router.pathname);
 
   const fetchState = useCallback(async () => {
     try {
@@ -70,9 +71,13 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Refetch on navigation while not ready: transitions happen via API calls
   // from step pages (billing-setup), and the redirect that follows is the
-  // natural refresh point.
+  // natural refresh point. Mark loading so the gate never routes on the
+  // stale pre-transition state (billing-setup <-> dashboard ping-pong).
   useEffect(() => {
+    if (prevPathname.current === router.pathname) return;
+    prevPathname.current = router.pathname;
     if (user && synced && info && info.state !== 'ready') {
+      setLoading(true);
       fetchState();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { useOnboarding } from './OnboardingContext';
 
 interface CorporateContextType {
   isCorporate: boolean;
@@ -23,13 +24,19 @@ export const CorporateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const { hasAccount, loading: onboardingLoading } = useOnboarding();
 
   useEffect(() => {
-    if (!user?.sub) {
+    if (!user?.sub || (!onboardingLoading && !hasAccount)) {
       setIsCorporate(false);
       setCompanyName(null);
       setCompanyLogo(null);
       setLoading(false);
+      return;
+    }
+    // Wait for the onboarding resolution: corporate-info 404s until the
+    // users row exists.
+    if (onboardingLoading) {
       return;
     }
 
@@ -45,7 +52,7 @@ export const CorporateProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       })
       .catch(err => console.error('Failed to fetch corporate info:', err))
       .finally(() => setLoading(false));
-  }, [user?.sub]);
+  }, [user?.sub, hasAccount, onboardingLoading]);
 
   return (
     <CorporateContext.Provider value={{ isCorporate, companyName, companyLogo, loading }}>
