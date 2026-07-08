@@ -236,8 +236,11 @@ export async function getHopsworksUserByEmail(
   credentials: HopsworksCredentials,
   email: string
 ): Promise<HopsworksUser | null> {
+  // filter_by=user_email pushes the lookup server-side; the unfiltered endpoint
+  // returns every user on the cluster (~20s, ~0.5MB) and was the dashboard's
+  // slowest call by far.
   const response = await fetchWithTimeout(
-    `${credentials.apiUrl}${ADMIN_API_BASE}/users`,
+    `${credentials.apiUrl}${ADMIN_API_BASE}/users?filter_by=user_email:${encodeURIComponent(email)}`,
     {
       headers: {
         'Authorization': `ApiKey ${credentials.apiKey}`
