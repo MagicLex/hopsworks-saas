@@ -1,25 +1,11 @@
 /**
- * Production: 5.0 upgrade notice with contact link.
- * Non-production (staging/preview): loud warning — shared prod DB, writes hit real users.
+ * Non-production (staging/preview) only: loud warning — shared prod DB, writes hit real users.
  */
 export function EnvironmentBanner() {
   const env = (process.env.NEXT_PUBLIC_ENVIRONMENT || '').trim();
 
   if (env === 'production' || !env) {
-    return (
-      <div className="sticky top-0 z-50 w-full bg-quartz-label-orange-shade2 px-4 py-1 text-center text-xs font-mono text-quartz-label-orange">
-        We are upgrading the main cluster to Hopsworks 5.0. You may experience temporary disturbances. Issues?{' '}
-        <a
-          href="https://www.hopsworks.ai/contact/main"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-semibold underline hover:text-quartz-black"
-        >
-          contact us
-        </a>
-        .
-      </div>
-    );
+    return null;
   }
 
   return (
