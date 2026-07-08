@@ -10,7 +10,7 @@ function supabaseStub(rows: any[], error: any = null) {
   return {
     from: () => ({
       select: () => ({
-        like: async () => ({ data: rows, error }),
+        eq: async () => ({ data: rows, error }),
       }),
     }),
   };

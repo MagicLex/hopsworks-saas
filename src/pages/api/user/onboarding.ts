@@ -62,6 +62,11 @@ async function computeState(req: NextApiRequest, res: NextApiResponse): Promise<
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // State endpoint: any cached response routes the gate on a stale state
+  // (browser-served 304/heuristic cache froze users on Loading after
+  // start-free). Never cacheable.
+  res.setHeader('Cache-Control', 'no-store');
+
   try {
     if (req.method === 'GET') {
       const { response } = await computeState(req, res);

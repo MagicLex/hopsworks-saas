@@ -3,7 +3,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 import { assignUserToCluster } from '../../../lib/cluster-assignment';
-import { checkRegistrationIp } from '../../../lib/asn-check';
+import { checkRegistrationIp, firstIp } from '../../../lib/asn-check';
 import { checkSignupAbuse, isCardRequiredEmail } from '../../../lib/signup-abuse';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
@@ -116,7 +116,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      const registrationIp = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+      // First hop only: registration_ip is an inet column, a raw
+      // x-forwarded-for chain ("client, proxy") would fail the insert.
+      const registrationIp = firstIp(req.headers['x-forwarded-for'] as string || req.socket.remoteAddress);
 
       // Signup abuse gates: disposable email, abuse-suspended IP reuse,
       // per-IP velocity. These fire BEFORE account creation.

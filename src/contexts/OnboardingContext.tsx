@@ -39,7 +39,7 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch('/api/user/onboarding');
+      const res = await fetch('/api/user/onboarding', { cache: 'no-store' });
       if (!res.ok) throw new Error(`onboarding fetch failed: ${res.status}`);
       const data: OnboardingInfo = await res.json();
       setInfo(data);

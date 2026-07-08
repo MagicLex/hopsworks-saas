@@ -8,6 +8,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  // Routing decisions (billing-setup redirects) read this response — a
+  // cached body routes the user on a stale state. Never cacheable.
+  res.setHeader('Cache-Control', 'no-store');
 
   try {
     const { month } = req.query;

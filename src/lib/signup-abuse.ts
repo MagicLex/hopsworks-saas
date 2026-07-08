@@ -66,12 +66,12 @@ export async function checkSignupAbuse(
   const ip = firstIp(ipHeader);
   if (!ip || isPrivateOrLocal(ip) || hasInviteToken) return null;
 
-  // registration_ip may hold a raw x-forwarded-for chain; prefix-match in SQL,
-  // then compare the first hop exactly to avoid 1.2.3.4 matching 1.2.3.40.
+  // registration_ip is an inet column: LIKE has no inet operator (42883,
+  // this gate silently failed open until 2026-07-08). inet equality it is.
   const { data: rows, error } = await supabaseAdmin
     .from('users')
     .select('status, deleted_at, deletion_reason, created_at, registration_ip, metadata')
-    .like('registration_ip', `${ip}%`);
+    .eq('registration_ip', ip);
 
   if (error) {
     // Fail open: an unreadable users table must not block signups (it would
