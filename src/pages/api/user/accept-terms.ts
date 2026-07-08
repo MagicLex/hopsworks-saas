@@ -135,9 +135,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.error('[Marketing] Webhook error in accept-terms:', err);
     });
 
-    // Assign cluster for free users who just selected free plan
+    // Assign cluster for free users. Not gated on the NULL->free transition:
+    // a failed first assignment (no cluster available) must be retryable on the
+    // next attempt, and assignUserToCluster already short-circuits when the
+    // user is assigned.
     let clusterAssigned = false;
-    if (plan === 'free' && !oldBillingMode) {
+    if (finalPlan === 'free' && !user.account_owner_id) {
       const clusterResult = await assignUserToCluster(supabaseAdmin, userId);
       clusterAssigned = clusterResult.success;
       if (clusterResult.success) {
