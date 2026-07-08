@@ -145,8 +145,13 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    // Prevent duplicate fetches
-    if (hasFetched.current) return;
+    // Prevent duplicate fetches — but always release loading: the effect
+    // re-runs whenever onboarding refetches on navigation, and billing is
+    // already in state.
+    if (hasFetched.current) {
+      setLoading(false);
+      return;
+    }
     hasFetched.current = true;
 
     fetchBilling();
