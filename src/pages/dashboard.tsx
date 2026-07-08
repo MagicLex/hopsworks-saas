@@ -171,7 +171,7 @@ function StatusBox({
 }
 
 export default function Dashboard() {
-  const { user, loading: authLoading, signOut, emailVerificationRequired } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const { billing: contextBilling, loading: contextBillingLoading, refetch: refetchBilling } = useBilling();
   const { pricing } = usePricing();
   const router = useRouter();
@@ -199,7 +199,6 @@ export default function Dashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [reloadProgress, setReloadProgress] = useState(0);
   const [spendingCapInput, setSpendingCapInput] = useState('');
   const [savingSpendingCap, setSavingSpendingCap] = useState(false);
   const [spendingCapEnabled, setSpendingCapEnabled] = useState(false);
@@ -248,20 +247,6 @@ export default function Dashboard() {
     }
   }, [router.query.joined, billingLoading, refetchBilling, router]);
 
-  // Redirect suspended users or users who haven't accepted terms to billing setup
-  // Team members don't need billing setup - they inherit from account owner
-  useEffect(() => {
-    if (!billingLoading && billing) {
-      if (billing.isTeamMember) {
-        // Team members don't need billing setup
-        return;
-      }
-      if (billing.isSuspended || !billing.termsAcceptedAt || !billing.billingMode) {
-        router.push('/billing-setup');
-      }
-    }
-  }, [billing, billingLoading, router]);
-
   // Show downgrade modal for free users with >1 project and a deadline
   useEffect(() => {
     if (!billingLoading && billing && hopsworksInfo) {
@@ -299,33 +284,6 @@ export default function Dashboard() {
       fetchInvites();
     }
   }, [user, teamData]);
-
-  // Auto-reload page when waiting for cluster provisioning with progress bar
-  useEffect(() => {
-    if (!billingLoading && (billing?.billingMode === 'prepaid' || billing?.billingMode === 'free') && !hopsworksInfo?.hasCluster && !hopsworksLoading) {
-      const reloadDelay = 15000; // 15 seconds
-      const progressInterval = 100; // Update every 100ms
-      const steps = reloadDelay / progressInterval;
-      let currentStep = 0;
-
-      // Animate progress bar
-      const progressTimer = setInterval(() => {
-        currentStep++;
-        setReloadProgress((currentStep / steps) * 100);
-
-        if (currentStep >= steps) {
-          window.location.reload();
-        }
-      }, progressInterval);
-
-      return () => {
-        clearInterval(progressTimer);
-        setReloadProgress(0);
-      };
-    } else {
-      setReloadProgress(0);
-    }
-  }, [billingLoading, billing?.billingMode, hopsworksInfo?.hasCluster, hopsworksLoading]);
 
   // Initialize spending cap state when billing loads
   useEffect(() => {
@@ -520,38 +478,6 @@ export default function Dashboard() {
     );
   }
 
-  if (emailVerificationRequired) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-5">
-        <div className="max-w-md w-full bg-white rounded-lg border p-8 text-center flex flex-col gap-4">
-          <h1 className="text-xl font-semibold">Verify your email</h1>
-          <p className="text-sm text-muted-foreground">
-            We sent a verification link to <span className="font-medium">{user?.email}</span>.
-            Click it, then continue. Check your spam folder if you don&apos;t see it.
-          </p>
-          <button
-            onClick={() => {
-              // Re-run the Auth0 authorize round trip: the live Auth0 session
-              // reissues tokens with the refreshed email_verified claim, no
-              // credentials prompt needed.
-              sessionStorage.removeItem('user_synced_session');
-              window.location.href = '/api/auth/login';
-            }}
-            className="w-full py-2.5 rounded bg-primary text-white text-sm font-medium hover:opacity-90"
-          >
-            I verified my email, continue
-          </button>
-          <button
-            onClick={() => signOut()}
-            className="text-xs text-muted-foreground hover:underline"
-          >
-            Use a different account
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (!user) return null;
 
   return (
@@ -615,7 +541,6 @@ export default function Dashboard() {
                   billingMode={billing?.billingMode ?? undefined}
                   clusterName={hopsworksInfo?.clusterName}
                   loading={hopsworksLoading || billingLoading || !billing || !hopsworksInfo}
-                  reloadProgress={reloadProgress}
                   isTeamMember={billing?.isTeamMember}
                 />
               </div>

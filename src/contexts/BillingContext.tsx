@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
+import { useOnboarding } from './OnboardingContext';
 
 export interface BillingInfo {
   billingMode: 'prepaid' | 'postpaid' | 'free' | 'team' | null;
@@ -87,6 +88,7 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, synced } = useAuth();
+  const { hasAccount, loading: onboardingLoading } = useOnboarding();
   const hasFetched = useRef(false);
 
   const fetchBilling = async () => {
@@ -129,9 +131,17 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    // Wait for sync to complete before fetching billing
-    if (!synced) {
+    // Wait for sync + onboarding resolution before fetching billing
+    if (!synced || onboardingLoading) {
       setLoading(true);
+      return;
+    }
+
+    // No DB account (unverified email, failed creation): /api/billing can
+    // only 404. The onboarding gate owns that situation.
+    if (!hasAccount) {
+      setBilling(null);
+      setLoading(false);
       return;
     }
 
@@ -140,7 +150,7 @@ export const BillingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     hasFetched.current = true;
 
     fetchBilling();
-  }, [user?.sub, synced]);
+  }, [user?.sub, synced, onboardingLoading, hasAccount]);
 
   return (
     <BillingContext.Provider value={{ billing, loading, error, refetch: fetchBilling }}>

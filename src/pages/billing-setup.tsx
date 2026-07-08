@@ -183,7 +183,6 @@ export default function BillingSetup() {
     }
     setSavingConsent(false);
 
-    sessionStorage.removeItem('payment_required');
     router.push('/dashboard');
   };
 

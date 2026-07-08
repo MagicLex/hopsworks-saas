@@ -7,6 +7,7 @@ import { checkRegistrationIp } from '../../../lib/asn-check';
 import { checkSignupAbuse, isCardRequiredEmail } from '../../../lib/signup-abuse';
 import { handleApiError } from '../../../lib/error-handler';
 import { sendUserRegistered, sendPlanUpdated } from '../../../lib/marketing-webhooks';
+import { SIGNUP_REFS_COOKIE, parseSignupRefsCookie, clearSignupRefsCookie } from '../../../lib/signup-refs';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,7 +72,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const { sub: userId, email, name } = session.user;
-    const { corporateRef, promoCode, teamInviteToken, termsAccepted, marketingConsent } = req.body;
+    const { teamInviteToken, termsAccepted, marketingConsent } = req.body;
+    // Corporate/promo refs travel in an httpOnly cookie set by
+    // /api/auth/{login,signup} — they survive the Auth0 round trip and the
+    // email-verification detour, unlike the old sessionStorage relay.
+    const { corporateRef, promoCode } = parseSignupRefsCookie(req.cookies[SIGNUP_REFS_COOKIE]);
     const healthCheckResults = {
       userExists: false,
       billingEnabled: false,
@@ -540,6 +545,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       !healthCheckResults.billingEnabled ||
       !healthCheckResults.clusterAssigned
     );
+
+    // Refs consumed (account exists past this point) — clear the relay cookie
+    // so a later signup on this browser doesn't inherit them. The 403 early
+    // returns above deliberately keep it: refs must survive the
+    // email-verification detour.
+    if (req.cookies[SIGNUP_REFS_COOKIE]) {
+      clearSignupRefsCookie(res);
+    }
 
     return res.status(200).json({
       success: true,

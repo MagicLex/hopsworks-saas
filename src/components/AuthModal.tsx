@@ -30,28 +30,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const { signIn } = useAuth();
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>(mode);
-  const [isCorporate, setIsCorporate] = useState(false);
-  const [isPromo, setIsPromo] = useState(false);
+  // Refs are handed to signIn as query params and persisted server-side in an
+  // httpOnly cookie by /api/auth/{login,signup} — no client-side relay.
+  const [corporateRefValue, setCorporateRefValue] = useState<string | null>(null);
+  const [promoCodeValue, setPromoCodeValue] = useState<string | null>(null);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const ref = corporateRef || urlParams.get('corporate_ref');
-    if (ref) {
-      setIsCorporate(true);
-      sessionStorage.setItem('corporate_ref', ref);
-    }
-
-    const promo = promoCode || urlParams.get('promo');
-    if (promo) {
-      setIsPromo(true);
-      sessionStorage.setItem('promo_code', promo);
-    }
+    setCorporateRefValue(corporateRef || urlParams.get('corporate_ref'));
+    setPromoCodeValue(promoCode || urlParams.get('promo'));
   }, [corporateRef, promoCode]);
 
-  const handleSignIn = () => {
-    const corporateRefValue = sessionStorage.getItem('corporate_ref');
-    const promoCodeValue = sessionStorage.getItem('promo_code');
+  const isCorporate = !!corporateRefValue;
+  const isPromo = !!promoCodeValue;
 
+  const handleSignIn = () => {
     posthog.capture('signup_initiated', {
       source: 'auth_modal',
       mode: authMode,

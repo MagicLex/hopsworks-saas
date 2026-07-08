@@ -2,32 +2,27 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useRouter } from 'next/router';
 
-interface SyncResult {
-  needsPayment: boolean;
-  isSuspended: boolean;
-  isTeamMember: boolean;
-}
-
 interface AuthContextType {
   user: any;
   loading: boolean;
   syncing: boolean;
   synced: boolean;
-  syncResult: SyncResult | null;
-  emailVerificationRequired: boolean;
   signIn: (corporateRef?: string, promoCode?: string, mode?: 'login' | 'signup') => void;
   signOut: () => void;
+  // Clears the per-session sync marker and re-runs sync-user. Used by the
+  // onboarding gate to retry a failed account creation.
+  resync: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, error, isLoading } = useUser();
+  const { user, isLoading } = useUser();
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
-  const [emailVerificationRequired, setEmailVerificationRequired] = useState(false);
+  // Bumped by resync() to force the sync effect to re-run.
+  const [syncEpoch, setSyncEpoch] = useState(0);
 
   useEffect(() => {
     if (!user || isLoading) {
@@ -35,65 +30,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!user && !isLoading) {
         setSynced(false);
         setSyncing(false);
-        setSyncResult(null);
       }
       return;
     }
 
-    // Force re-sync after payment setup (user returns from Stripe checkout)
+    // Force re-sync after payment setup (user returns from Stripe checkout).
+    // synced flips false→true so downstream consumers (onboarding state,
+    // billing) refetch once the fresh sync lands.
     if (router.query.payment === 'success') {
       sessionStorage.removeItem('user_synced_session');
+      setSynced(false);
       const { payment, ...rest } = router.query;
       router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+      return; // effect re-runs after query replace
     }
 
     // Check if we've already synced this session
     const syncedThisSession = sessionStorage.getItem('user_synced_session');
     if (syncedThisSession === user.sub) {
-      // Already synced - mark as ready
       setSynced(true);
       return;
     }
 
-    // Start syncing
     setSyncing(true);
     sessionStorage.setItem('user_synced_session', user.sub!);
 
-    const corporateRef = sessionStorage.getItem('corporate_ref');
-    const promoCode = sessionStorage.getItem('promo_code');
+    // Terms relay for the team-invite flow (set by accept-invite before the
+    // Auth0 redirect). Corporate/promo refs travel in an httpOnly cookie set
+    // by /api/auth/signup — no client-side relay.
     const termsAccepted = sessionStorage.getItem('terms_accepted') === 'true';
     const marketingConsent = sessionStorage.getItem('marketing_consent') === 'true';
 
     fetch('/api/auth/sync-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ corporateRef, promoCode, termsAccepted, marketingConsent })
+      body: JSON.stringify({ termsAccepted, marketingConsent })
     })
       .then(res => {
         if (!res.ok) {
           return res.json().then(errData => {
-            if (errData.emailVerificationRequired) {
-              setEmailVerificationRequired(true);
-            }
             throw new Error(errData.error || `Sync failed: ${res.status}`);
           });
         }
         return res.json();
       })
-      .then(data => {
-        // Clear registration data after successful sync
-        sessionStorage.removeItem('corporate_ref');
-        sessionStorage.removeItem('promo_code');
+      .then(() => {
         sessionStorage.removeItem('terms_accepted');
         sessionStorage.removeItem('marketing_consent');
-
-        // Store sync result for consumers to use
-        setSyncResult({
-          needsPayment: data.needsPayment,
-          isSuspended: data.isSuspended,
-          isTeamMember: data.isTeamMember,
-        });
-
         setSyncing(false);
         setSynced(true);
       })
@@ -101,28 +84,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Failed to sync user:', err);
         sessionStorage.removeItem('user_synced_session');
         setSyncing(false);
-        // Still mark as synced so the app doesn't hang - pages will handle errors
+        // Still mark as synced so the app doesn't hang — the onboarding
+        // state endpoint reports the real situation (e.g. email_unverified).
         setSynced(true);
       });
-  }, [user, isLoading, router.query.payment]);
+  }, [user, isLoading, router.query.payment, syncEpoch]);
 
   const signIn = (corporateRef?: string, promoCode?: string, mode: 'login' | 'signup' = 'login') => {
-    if (corporateRef) {
-      sessionStorage.setItem('corporate_ref', corporateRef);
-    }
-    if (promoCode) {
-      sessionStorage.setItem('promo_code', promoCode);
-    }
-    router.push(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login');
+    const params = new URLSearchParams();
+    if (corporateRef) params.set('corporate_ref', corporateRef);
+    if (promoCode) params.set('promo', promoCode);
+    const qs = params.toString();
+    router.push(`/api/auth/${mode === 'signup' ? 'signup' : 'login'}${qs ? `?${qs}` : ''}`);
   };
 
   const signOut = () => {
     sessionStorage.removeItem('user_synced_session');
     setSynced(false);
     setSyncing(false);
-    setSyncResult(null);
-    setEmailVerificationRequired(false);
     router.push('/api/auth/logout');
+  };
+
+  const resync = () => {
+    sessionStorage.removeItem('user_synced_session');
+    setSynced(false);
+    setSyncEpoch(e => e + 1);
   };
 
   return (
@@ -131,10 +117,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading: isLoading,
       syncing,
       synced,
-      syncResult,
-      emailVerificationRequired,
       signIn,
-      signOut
+      signOut,
+      resync
     }}>
       {children}
     </AuthContext.Provider>
