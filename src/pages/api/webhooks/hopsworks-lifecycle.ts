@@ -107,10 +107,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       default:
         console.warn(`[Hopsworks webhook] Unknown event type: ${payload.event}`);
     }
+    // After successful handling only: a 500 makes the cluster retry, and
+    // logging before the handler would duplicate rows on every retry.
+    await logLifecycleEvent(payload);
     return res.status(200).json({ received: true });
   } catch (err) {
     console.error(`[Hopsworks webhook] Handler error for ${payload.event}:`, err);
     return res.status(500).json({ error: 'Handler failed' });
+  }
+}
+
+// Observability only (admin activity view): append the event to
+// lifecycle_events with the SaaS user resolved best-effort. Never throws —
+// a logging failure must not fail an already-handled webhook.
+async function logLifecycleEvent(payload: LifecyclePayload) {
+  try {
+    const d = payload.data as Record<string, unknown>;
+    const hwUserId =
+      typeof d.userId === 'number' ? d.userId : typeof d.ownerId === 'number' ? d.ownerId : null;
+    let email = typeof d.email === 'string' ? d.email : null;
+
+    let saasUserId: string | null = null;
+    if (hwUserId !== null || email) {
+      const base = supabaseAdmin.from('users').select('id, email');
+      const { data: match } =
+        hwUserId !== null
+          ? await base.eq('hopsworks_user_id', hwUserId).maybeSingle()
+          : await base.eq('email', email!).maybeSingle();
+      saasUserId = match?.id ?? null;
+      email = email ?? match?.email ?? null;
+    }
+
+    const { error } = await supabaseAdmin.from('lifecycle_events').insert({
+      event: payload.event,
+      cluster_id: payload.clusterId || null,
+      hopsworks_user_id: hwUserId,
+      user_id: saasUserId,
+      email,
+      project_id: typeof d.projectId === 'number' ? d.projectId : null,
+      project_name:
+        typeof d.name === 'string' ? d.name : typeof d.projectName === 'string' ? d.projectName : null,
+      payload: payload.data,
+    });
+    if (error) throw error;
+  } catch (err) {
+    console.error('[Hopsworks webhook] activity log failed:', err);
   }
 }
 

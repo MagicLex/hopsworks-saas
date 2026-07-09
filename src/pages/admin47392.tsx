@@ -5,6 +5,7 @@ import { Edit2, Server } from 'lucide-react';
 import { toast } from 'sonner';
 import Navbar from '@/components/Navbar';
 import AnalyticsTab from '@/components/admin/AnalyticsTab';
+import ActivityTab from '@/components/admin/ActivityTab';
 import HealthTab from '@/components/admin/HealthTab';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -492,6 +493,7 @@ export default function AdminPage() {
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="clusters">Clusters</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="activity">Activity</TabsTrigger>
               <TabsTrigger value="health">Health</TabsTrigger>
             </TabsList>
 
@@ -849,6 +851,10 @@ export default function AdminPage() {
 
             <TabsContent value="analytics">
               <AnalyticsTab />
+            </TabsContent>
+
+            <TabsContent value="activity">
+              <ActivityTab />
             </TabsContent>
 
             <TabsContent value="health">
