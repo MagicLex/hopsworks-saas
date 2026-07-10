@@ -257,9 +257,11 @@ export async function getHopsworksUserByEmail(
   const data = await response.json();
   const users = data.items || [];
 
-  // Find user by email - OAuth2 or REMOTE_ACCOUNT_TYPE
+  // Find user by email - OAuth2 or REMOTE_ACCOUNT_TYPE.
+  // Hopsworks stores emails lowercased; ours keep the Auth0 casing. Compare case-insensitively.
+  const emailLc = email.toLowerCase();
   const user = users.find((u: any) =>
-    u.email === email && (u.accountType === 'OAUTH2' || u.accountType === 'REMOTE_ACCOUNT_TYPE')
+    u.email?.toLowerCase() === emailLc && (u.accountType === 'OAUTH2' || u.accountType === 'REMOTE_ACCOUNT_TYPE')
   );
 
   if (!user) {

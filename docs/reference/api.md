@@ -382,14 +382,6 @@ List every user with associated projects, costs, and cluster assignments (used b
 
 ## Webhook Endpoints
 
-### POST /api/webhooks/auth0
-Handles Auth0 post-login actions:
-- Creates user in database if not exists
-- Updates login count and last login time
-- Creates Stripe customer records
-- Triggers health checks to sync billing state
-- Requires `x-auth0-secret` header matching `AUTH0_WEBHOOK_SECRET`
-
 ### POST /api/webhooks/stripe
 Handles Stripe webhook events:
 - `checkout.session.completed` (mode `setup`): Payment method setup completion

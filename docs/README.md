@@ -35,10 +35,6 @@
 - [Database Schema](reference/database/) - Detailed table documentation
 - [Metering Queries](reference/metering-queries.md) - Quick reference for compute and storage queries
 
-## Backend Coordination
-
-- [Hopsworks Backend Briefs](HOPSWORKS_BACKEND_BRIEFS.md) - Wishlist of `hopsworks-ee` changes that would eliminate workarounds in this repo
-
 ## Troubleshooting
 
 - [Known Issues](troubleshooting/known-issues.md) - Common problems and fixes

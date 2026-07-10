@@ -104,20 +104,20 @@ npm run start
 
 **Workaround**: Three changes work together:
 
-1. **`project-sync.ts`** — When the cron detects a project was deleted (marked inactive), it bumps `maxNumProjects` by the number of deleted projects via `updateUserProjectLimit`.
+1. **`project-sync.ts`**: when the cron detects a project was deleted (marked inactive), it bumps `maxNumProjects` by the number of deleted projects via `updateUserProjectLimit`.
 
-2. **One-way ratchet on `maxNumProjects`** — Every call site that writes `maxNumProjects` now uses a `<` guard instead of `!==`. This means the value can only go UP, never be reset down. This prevents Health Check 5, cluster assignment, Stripe webhooks, and billing APIs from undoing the workaround bump.
+2. **One-way ratchet on `maxNumProjects`**: every call site that writes `maxNumProjects` now uses a `<` guard instead of `!==`. This means the value can only go UP, never be reset down. This prevents Health Check 5, cluster assignment, Stripe webhooks, and billing APIs from undoing the workaround bump.
 
    **Files with the ratchet guard** (11 call sites total):
-   - `src/pages/api/auth/sync-user.ts` — Health Check 5
-   - `src/lib/cluster-assignment.ts` — 2 locations
-   - `src/pages/api/webhooks/stripe.ts` — 3 locations (upgrade, sub deleted, payment removed)
-   - `src/pages/api/billing.ts` — 2 locations (upgrade, downgrade)
-   - `src/pages/api/billing/setup-payment.ts` — 1 location
-   - `src/lib/project-sync.ts` — workaround bump (structurally additive)
-   - `src/pages/api/admin/fix-project-quotas.ts` — one-off fix
+   - `src/pages/api/auth/sync-user.ts` (Health Check 5)
+   - `src/lib/cluster-assignment.ts` (2 locations)
+   - `src/pages/api/webhooks/stripe.ts` (3 locations: upgrade, sub deleted, payment removed)
+   - `src/pages/api/billing.ts` (2 locations: upgrade, downgrade)
+   - `src/pages/api/billing/setup-payment.ts` (1 location)
+   - `src/lib/project-sync.ts` (workaround bump, structurally additive)
+   - `src/pages/api/admin/fix-project-quotas.ts` (one-off fix)
 
-3. **`hopsworks-info.ts`** — Always fetches projects fresh from Hopsworks instead of using cache, so deleted projects never show in the UI.
+3. **`hopsworks-info.ts`**: always fetches projects fresh from Hopsworks instead of using cache, so deleted projects never show in the UI.
 
 **Important for future developers**: If you add a new call to `updateUserProjectLimit`, you **MUST** follow the ratchet pattern:
 ```typescript
@@ -126,13 +126,13 @@ if (hwUser && (hwUser.maxNumProjects ?? 0) < desiredLimit) {
   await updateUserProjectLimit(credentials, userId, desiredLimit);
 }
 ```
-Never use `!==` — it will reset the workaround and lock users out of creating projects.
+Never use `!==`: it will reset the workaround and lock users out of creating projects.
 
 **One-off fix for existing users**: `POST /api/admin/fix-project-quotas`
 - Finds all users with inactive (deleted) projects
-- Computes `baseLimit + deletedCount` (idempotent — safe to run multiple times)
+- Computes `baseLimit + deletedCount` (idempotent, safe to run multiple times)
 - Supports `{ "dryRun": true }` to preview before applying
-- See [Admin Tools](#fix-project-quotas) below
+- See the admin tools table in `docs/OPS.md`
 
 **TODO**: Remove workaround when Hopsworks counts active projects instead of created.
 
@@ -143,29 +143,9 @@ Hopsworks Identity Provider needs:
 - Given name claim: `given_name`
 - Family name claim: `family_name`
 
-### 2. CORS Issues
+### 3. CORS Issues
 If CORS errors occur with Hopsworks API:
 - Add your domain to Hopsworks allowed origins
 - Use server-side API routes to proxy requests
-
-### 3. Project Namespace Mismatch (Billing Impact)
-
-**Status**: ✅ Fixed (2025-01-21)
-
-**Issue** (was): Project names stored with wrong namespace format, causing billing lookup failures.
-
-- Hopsworks project names use underscores: `my_project`
-- Kubernetes namespaces use hyphens: `my-project`
-- We stored `project_name` as namespace, but OpenCost reports K8s namespaces
-
-**Fix**: Upstream PR [HWORKS-2566](https://github.com/logicalclocks/hopsworks-ee/pull/2780) added `namespace` field to admin API. We now use `p.namespace` directly in:
-- `src/types/api.ts` - `HopsworksProject.namespace` (shared type)
-- `src/lib/hopsworks-api.ts` - `HopsworksProject.namespace` (internal type)
-- `src/lib/project-sync.ts` - with defensive validation
-- `src/pages/api/user/hopsworks-info.ts` - with defensive validation
-- `src/pages/api/team/owner-projects.ts`
-- `src/components/admin/ProjectRoleManager.tsx` - UI display
-
-**Defensive validation**: Projects without `namespace` field are logged as `[BILLING]` errors and skipped to prevent corrupt billing data.
 
 **Note**: Existing projects in DB may have stale namespace values. Run project sync to update: `POST /api/cron/sync-projects`

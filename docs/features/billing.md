@@ -209,12 +209,6 @@ total_cost DECIMAL(10,2)
 project_breakdown JSONB  -- Per-project usage details
 ```
 
-### user_credits (Legacy Prepaid)
-```sql
-total_purchased DECIMAL(10,2)   -- Credits purchased
-total_used DECIMAL(10,2)        -- Credits consumed
-```
-
 ## API Endpoints
 
 ### User Facing
@@ -304,8 +298,6 @@ STRIPE_PRICE_STORAGE_ONLINE=price_...
 STRIPE_PRICE_STORAGE_OFFLINE=price_...
 STRIPE_PRICE_NETWORK_EGRESS=price_...
 
-# Auth0 webhook secret (verifies Auth0 Action calls)
-AUTH0_WEBHOOK_SECRET=super-secure-string
 
 # Corporate onboarding (HubSpot)
 HUBSPOT_API_KEY=pat-...
@@ -443,10 +435,10 @@ const hourlyCost = calculateCreditsUsed({
 ```
 
 The collector runs two passes per cluster:
-1. **Pass 1 (Compute + Storage):** Namespaces reported by OpenCost (active pods) —
+1. **Pass 1 (Compute + Storage):** Namespaces reported by OpenCost (active pods):
    bills CPU/GPU/RAM hours and storage together.
 2. **Pass 2 (Storage-only):** Projects found in HDFS/NDB batch queries that were
-   not in Pass 1 — bills storage with zero compute. This covers projects where
+   not in Pass 1: bills storage with zero compute. This covers projects where
    data persists but the user's workloads are idle.
 
 **Example (testme project):**
@@ -550,19 +542,6 @@ WHERE status = 'active';
 
 4. **Monitor first run:**
 Check logs for "Collecting storage metrics..." and verify no errors
-
-## Migration Notes
-
-### From Old System
-- Legacy fields removed from `usage_daily`
-- OpenCost no longer stores costs, only usage
-- Pricing now in `billing-rates.ts`
-- Views updated to use new fields
-
-### Backward Compatibility
-- `total_cost` field maintained for display
-- Old data remains readable
-- Gradual migration possible
 
 ## Future Improvements
 

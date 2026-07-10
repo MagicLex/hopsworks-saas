@@ -23,29 +23,8 @@
    ```
 3. Enable Google OAuth2 social connection
 4. Note down credentials for environment variables
-5. **CRITICAL**: Set up Post Login Action:
-   - Go to Auth0 Dashboard > Actions > Flows > Login
-   - Create new Action with this code:
-   ```javascript
-   exports.onExecutePostLogin = async (event, api) => {
-     const axios = require('axios');
-     
-     await axios.post('https://your-domain.vercel.app/api/webhooks/auth0', {
-       user_id: event.user.user_id,
-       email: event.user.email,
-       name: event.user.name,
-       ip: event.request.ip,
-       created_at: event.user.created_at,
-       logins_count: event.stats.logins_count
-     }, {
-       headers: {
-         'x-auth0-secret': event.secrets.WEBHOOK_SECRET
-       }
-     });
-   };
-   ```
-   - Add secret `WEBHOOK_SECRET` with the value from `AUTH0_WEBHOOK_SECRET`
-   - Deploy the Action and add it to the Login flow
+
+User provisioning happens app-side on login via `/api/auth/sync-user`; no Auth0 Action or webhook is required.
 
 ### 2. Hopsworks Identity Provider
 
@@ -101,7 +80,7 @@ See [Database Documentation](database/) for schemas and procedures.
      - `customer.subscription.deleted`
      - `invoice.payment_failed`
 
-See `docs/stripe-setup.md` for full Stripe product mappings and example CLI commands.
+See [Stripe integration](../integrations/stripe.md) for full Stripe product mappings and example CLI commands.
 
 ### 5. Corporate Onboarding (HubSpot)
 
@@ -110,10 +89,10 @@ See `docs/stripe-setup.md` for full Stripe product mappings and example CLI comm
    - `crm.objects.contacts.read`
    - `crm.objects.companies.read`
 2. Set `HUBSPOT_API_KEY` in Vercel (and locally).
-3. Ensure HubSpot deals reference valid contacts—the app validates invite emails against deal contacts.
+3. Ensure HubSpot deals reference valid contacts: the app validates invite emails against deal contacts.
 4. Communicate corporate registration links using the format `https://your-domain/?corporate_ref=<dealId>`.
 
-Operational details live in `docs/hubspot.md`.
+Operational details live in [HubSpot integration](../integrations/hubspot.md).
 
 ### 6. Email Invites (Resend)
 
@@ -121,7 +100,7 @@ Operational details live in `docs/hubspot.md`.
 2. Set `RESEND_API_KEY` and `RESEND_FROM_EMAIL` environment variables.
 3. Update SPF/DKIM records to improve invite deliverability.
 
-See `docs/resend.md` for invite flow, failure handling, and rotation steps.
+See [Resend integration](../integrations/resend.md) for invite flow, failure handling, and rotation steps.
 
 ## Vercel Deployment
 
@@ -129,7 +108,7 @@ See `docs/resend.md` for invite flow, failure handling, and rotation steps.
 
 Set all variables from [.env.example](../.env.example) in Vercel dashboard. Minimum required categories:
 
-- **Auth0**: `AUTH0_*` (including `AUTH0_WEBHOOK_SECRET`) and allowed URLs.
+- **Auth0**: `AUTH0_*` and allowed URLs.
 - **Supabase**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and all `STRIPE_PRICE_*` IDs.
 - **Corporate**: `HUBSPOT_API_KEY` (omit if you disable corporate onboarding).
@@ -260,13 +239,13 @@ npm run build
 - Keep environment variables current and verified after each deployment.
 - Enforce HTTPS at the edge (Vercel) and within Hopsworks.
 - Limit admin access via the `ADMIN_EMAILS` setting.
-- Protect webhook endpoints with `AUTH0_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET`.
+- Protect webhook endpoints with `STRIPE_WEBHOOK_SECRET`.
 - Store `HUBSPOT_API_KEY` and `RESEND_API_KEY` only in secure secrets storage.
 - Rotate `CRON_SECRET`, API keys, and Supabase service keys on schedule.
 - Ensure database backups and Supabase point-in-time recovery remain enabled.
 
 ## Related Documentation
 
-- [Architecture Overview](architecture.md)
-- [Known Issues](known-issues.md)
-- [Stripe Setup](stripe-setup.md)
+- [Architecture Overview](../architecture/overview.md)
+- [Known Issues](../troubleshooting/known-issues.md)
+- [Stripe Setup](../integrations/stripe.md)

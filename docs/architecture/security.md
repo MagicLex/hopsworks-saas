@@ -18,13 +18,6 @@ This document outlines the security measures implemented in the hopsworks-manage
 
 ## Webhook Security
 
-### Auth0 Webhook
-- **Endpoint**: `/api/webhooks/auth0`
-- **Verification**: Header-based secret validation
-- **Production**: Requires exact match of `AUTH0_WEBHOOK_SECRET`
-- **Development**: Allows bypass if no secret configured
-- Creates users and Stripe customers on first login
-
 ### Stripe Webhook
 - **Endpoint**: `/api/webhooks/stripe`
 - **Domain**: `https://run.hopsworks.ai/api/webhooks/stripe`
@@ -166,7 +159,6 @@ Required security-related environment variables:
 ```bash
 # Authentication
 AUTH0_SECRET            # Auth0 session encryption
-AUTH0_WEBHOOK_SECRET    # Webhook verification
 AUTH0_CLIENT_SECRET     # OAuth client secret
 
 # Database
@@ -207,7 +199,7 @@ Handled by Vercel platform defaults:
 ## Known Limitations (MVP)
 
 - **Kubeconfig Storage**: Stored as plain text in Supabase; access is limited to service-role operations, so rotate keys and monitor audit logs.
-- **Webhook Verification**: Uses shared-secret comparison; rotate `AUTH0_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET` on schedule.
+- **Webhook Verification**: Uses shared-secret comparison; rotate `STRIPE_WEBHOOK_SECRET` on schedule.
 - **Rate Limiting**: In-memory limiter does not extend across Vercel regions; rely on monitoring to detect bursts.
 - **Audit Logging**: Console logs only; export Vercel logs for retention.
 - **API Versioning**: Single version; coordinate changes directly with consumers.

@@ -139,14 +139,6 @@ email-verification detour.
 - **`user_projects`** – Maps OpenCost namespaces to account owners.
 - **`usage_daily`** – Hourly totals aggregated per day for Stripe sync.
 - **`stripe_products`** – Active Stripe product/price mappings used by billing sync.
-- **`user_credits`** – Legacy/prepaid credits (report-only for current builds).
-
-### Key Changes from Legacy
-- Replaced hardcoded pricing with OpenCost-derived actuals.
-- Added `user_projects` for namespace → user mapping.
-- Added `project_member_roles` for project auto-assignment tracking.
-- Added `opencost_*` columns to `usage_daily`.
-- Switched cost pulls from metrics-server to `kubectl exec` proxying into OpenCost.
 
 ## Hopsworks Integration
 
