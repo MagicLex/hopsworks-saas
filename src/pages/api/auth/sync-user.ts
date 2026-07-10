@@ -71,7 +71,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const { sub: userId, email, name } = session.user;
+    const { sub: userId, name } = session.user;
+    // users.email invariant: stored lowercase. Hopsworks lowercases emails on
+    // its side and every lookup (invites, webhook, admin) compares lowercased.
+    const email = typeof session.user.email === 'string' ? session.user.email.toLowerCase() : session.user.email;
     const { teamInviteToken, termsAccepted, marketingConsent } = req.body;
     // Corporate/promo refs travel in an httpOnly cookie set by
     // /api/auth/{login,signup} — they survive the Auth0 round trip and the

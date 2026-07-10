@@ -38,7 +38,6 @@ interface LifecyclePayload {
   clusterId: string;
   data: Record<string, unknown>;
 }
-
 function verifySignature(rawBody: Buffer, header: string | undefined): boolean {
   if (!header) return false;
   const secret = process.env.HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET;
@@ -133,7 +132,7 @@ async function logLifecycleEvent(payload: LifecyclePayload) {
       const { data: match } =
         hwUserId !== null
           ? await base.eq('hopsworks_user_id', hwUserId).maybeSingle()
-          : await base.eq('email', email!).maybeSingle();
+          : await base.eq('email', email!.toLowerCase()).maybeSingle();
       saasUserId = match?.id ?? null;
       email = email ?? match?.email ?? null;
     }
@@ -179,7 +178,7 @@ async function handleUserUpserted(payload: LifecyclePayload) {
     const byEmail = await supabaseAdmin
       .from('users')
       .select('id, hopsworks_user_id, hopsworks_username')
-      .eq('email', email)
+      .eq('email', email.toLowerCase())
       .maybeSingle();
     if (byEmail.error) throw byEmail.error;
     user = byEmail.data;
