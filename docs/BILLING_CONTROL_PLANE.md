@@ -226,8 +226,9 @@ Bottom-up: meter correctly, make policy editable, then enforce. Each step is shi
 
 ## Open risks (billing)
 
-- `NULL` billing_mode accounts must not fall through. The reconciler skips them, counts them
-  unresolved, and Slack-alerts; the bookkeeper fails closed to `frozen` on an unknown
+- `NULL` billing_mode accounts must not fall through. The reconciler skips them; those with
+  recorded cost or active projects are counted unresolved and Slack-alerted (a stalled signup with
+  neither is normal limbo, skipped quietly). The bookkeeper fails closed to `frozen` on an unknown
   `applied_quota_tier`.
 - Storage cost survives compute enforcement and suspension; only deletion reclaims it. Paid: it
   bills, they pay, no action needed. Free: write-freeze caps growth, but idle stored data keeps
