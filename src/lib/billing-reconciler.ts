@@ -14,7 +14,7 @@ export interface ReconcileSummary {
   tierChanges: number;        // projects whose applied_quota_tier changed
   throttled: number;          // accounts currently throttled
   frozen: number;             // accounts currently frozen
-  unresolved: number;         // accounts skipped because billing_mode is NULL (anomaly)
+  unresolved: number;         // NULL billing_mode with recorded cost or projects (anomaly)
   unresolvedAccounts: string[]; // their ids, for alerting (never silent)
 }
 
@@ -134,15 +134,18 @@ export async function reconcileBilling(supabase: SupabaseClient): Promise<Reconc
     const monthlyTotal = mtd.get(owner.id) || 0;
 
     // NULL billing_mode must never silently resolve to 'normal' (unlimited). A
-    // limbo account has no cluster and no projects; a NULL one with recorded cost
-    // is an anomaly that needs resolving, not a free pass through every gate.
+    // limbo account (no recorded cost, no projects) is just a signup stalled
+    // before plan selection — skip quietly. A NULL one with cost or projects is
+    // an anomaly that needs resolving, not a free pass through every gate.
     if (!owner.billing_mode) {
-      summary.unresolved++;
-      summary.unresolvedAccounts.push(owner.id);
-      console.error(
-        `[reconcile] ${owner.id}: NULL billing_mode with $${monthlyTotal.toFixed(2)} month-to-date; ` +
-          `skipping enforcement, needs resolution`,
-      );
+      if (monthlyTotal > 0 || projectsByOwner.has(owner.id)) {
+        summary.unresolved++;
+        summary.unresolvedAccounts.push(owner.id);
+        console.error(
+          `[reconcile] ${owner.id}: NULL billing_mode with $${monthlyTotal.toFixed(2)} month-to-date; ` +
+            `skipping enforcement, needs resolution`,
+        );
+      }
       continue;
     }
 
