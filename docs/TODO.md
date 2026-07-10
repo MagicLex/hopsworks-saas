@@ -64,6 +64,7 @@ The `billing-update` PR ships missed-hour *detection* (per-cluster `metering_wat
 
 - [ ] Remove `numActiveProjects` from `src/pages/api/user/hopsworks-info.ts` response. We do not trust it (see I-2, `docs/troubleshooting/known-issues.md`).
 - [ ] Add `projects: []` to the error-response path in `hopsworks-info.ts` so the dashboard does not crash on Hopsworks outage.
+- [ ] `fix-project-quotas` misses users whose deleted projects were never tracked (pre-tracking era). Either backfill `user_projects` from Hopsworks admin API, or extend the endpoint to query Hopsworks directly when our DB has zero deleted rows.
 
 ### Doc cleanup (remains from 2026-05-08 audit)
 

@@ -42,4 +42,4 @@ The private app must have these read scopes:
 
 - Rotate `HUBSPOT_API_KEY` via HubSpot’s private app settings and update Vercel secrets.
 - Monitor HubSpot API usage in the private app dashboard; heavy traffic should stay well below quota.
-- Corporate usage queries and manual admin overrides are documented in `docs/corporate-registration.md`.
+- Corporate usage queries and manual admin overrides are documented in [corporate registration](../features/corporate-registration.md).

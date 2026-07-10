@@ -2,7 +2,7 @@
 
 ## overview
 
-corporate accounts use a prepaid billing model with external invoicing. these accounts bypass stripe payment requirements and receive immediate cluster access upon registration. operational details for the HubSpot deal validation live in `docs/hubspot.md`.
+corporate accounts use a prepaid billing model with external invoicing. these accounts bypass stripe payment requirements and receive immediate cluster access upon registration. operational details for the HubSpot deal validation live in [HubSpot integration](../integrations/hubspot.md).
 
 ## registration-process
 

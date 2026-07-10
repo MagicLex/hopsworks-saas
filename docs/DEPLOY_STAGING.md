@@ -1,21 +1,29 @@
-# Staging deployment — dev.run.hopsworks.ai
+# Staging deployment: dev.run.hopsworks.ai
 
 Permanent staging environment for **bridge testing**: Hopsworks cluster
 swaps, Stripe webhook flows, Auth0 callbacks, Resend templates, etc.
 Everything user-facing that talks to an external system.
 
 ```
-main branch     → run.hopsworks.ai           (production)
-staging branch  → dev.run.hopsworks.ai       (staging — bridges isolated)
+master branch   → run.hopsworks.ai           (production)
+staging branch  → dev.run.hopsworks.ai       (staging, bridges isolated)
 PRs             → *-git-<branch>.vercel.app  (preview, ephemeral)
+```
+
+Staging is a Vercel **custom environment** named `staging` (not the default
+Preview): it triggers only on the `staging` branch and carries its own full
+set of environment variables. Inspect or pull them with:
+
+```bash
+vercel env pull --environment=staging .env.staging
 ```
 
 ## What's isolated vs shared
 
 | Resource | Staging uses | Why |
 |---|---|---|
-| **Database** (Supabase) | **Same as production** | Bridge testing, not data testing. Schema is the same; we want to verify our code talks correctly to upstream systems against real shapes. |
-| **Auth0 application** | Separate app, same tenant | Callback URLs differ; we don't want staging to issue tokens against the prod Web Origin allow-list. |
+| **Database** (Supabase) | **Same as production** (`pahfsiosiuxdkiebepav`) | Bridge testing, not data testing. Schema is the same; we want to verify our code talks correctly to upstream systems against real shapes. |
+| **Auth0 application** | Same app as prod (`SaaS Hopsworks`, `fKsp6ZBz…`) | `dev.run.hopsworks.ai` is in the app's callback/logout/web-origin allow-lists (added 2026-07-08 via auth0-cli). `AUTH0_CLIENT_SECRET` is a sensitive var on the staging env. |
 | **Stripe** | Test mode keys + test webhook | Real charges would happen otherwise. |
 | **Hopsworks cluster** | Test cluster row `saas-5-test` (`environment='staging'`) | Don't pollute prod cluster with experimental project quotas / suspension flags. Routing in `cluster-assignment.ts` filters on `environment = currentClusterEnvironment()`. |
 | **Crons** | Disabled on staging | Vercel runs `vercel.json` crons on Production deployment only. Trigger manually for testing. |
@@ -27,7 +35,7 @@ PRs             → *-git-<branch>.vercel.app  (preview, ephemeral)
 
 ## One-time setup
 
-### 1. Auth0 — separate application, same tenant
+### 1. Auth0: separate application, same tenant
 
 1. Auth0 Dashboard → Applications → Create new "Regular Web Application"
    named `Hopsworks Managed Staging`.
@@ -36,7 +44,7 @@ PRs             → *-git-<branch>.vercel.app  (preview, ephemeral)
 4. **Allowed Web Origins**: `https://dev.run.hopsworks.ai`
 5. Copy `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`. Tenant URL stays the same.
 
-### 2. Stripe — TEST mode
+### 2. Stripe: TEST mode
 
 The codebase already supports `STRIPE_TEST_*` keys via `lib/stripe-config.ts`.
 For staging, point `STRIPE_*` env vars at the test-mode keys.
@@ -45,7 +53,7 @@ Create a Stripe webhook endpoint in the **test-mode** dashboard:
 `https://dev.run.hopsworks.ai/api/webhooks/stripe` → copy the `whsec_*`
 into staging's `STRIPE_WEBHOOK_SECRET`.
 
-### 3. Hopsworks — test cluster row
+### 3. Hopsworks: test cluster row
 
 `hopsworks_clusters` has an `environment` column (`'production' | 'staging'`, default `'production'`,
 added in migration `0002_cluster_environment.sql`). Auto-assignment in
@@ -80,10 +88,10 @@ auto-assignment short-circuits once a `user_hopsworks_assignments` row exists.
 Update `hopsworks_cluster_id` directly. Only do this if the user has no live
 projects on the source cluster.
 
-### 4. Vercel — branch + domain + env vars
+### 4. Vercel: branch + domain + env vars
 
 1. Vercel project → Settings → Git → Production branch is `main`. The
-   `staging` branch deploys as a Preview by default — that's what we want.
+   `staging` branch deploys as a Preview by default: that's what we want.
 2. Vercel project → Domains → add `dev.run.hopsworks.ai`, attach to
    "Git branch: staging".
 3. DNS: add CNAME `dev` → `cname.vercel-dns.com`.
@@ -125,25 +133,25 @@ projects on the source cluster.
 ```bash
 # Daily flow
 git checkout staging
-git merge main             # bring staging up to date
+git merge master           # bring staging up to date
 # ... make changes ...
 git push origin staging    # auto-deploys to dev.run.hopsworks.ai
 
 # When staging changes are validated
-git checkout main
+git checkout master
 git merge staging
-git push origin main       # auto-deploys to run.hopsworks.ai
+git push origin master     # auto-deploys to run.hopsworks.ai
 ```
 
 ## Verifying staging is correctly configured
 
-After setup, hit `https://dev.run.hopsworks.ai`:
-- **Loud red banner** at the top: "STAGING — shared production DB. Writes affect real users."
+After deploying, hit `https://dev.run.hopsworks.ai`:
+- **Loud red banner** at the top: "STAGING - shared production DB. Writes affect real users."
 - Login flow lands you back on `dev.run.hopsworks.ai`, not `run.hopsworks.ai`.
 - Billing setup uses Stripe test mode (test card `4242 4242 4242 4242`).
 - Any cluster you get assigned is the staging-test row.
 
-If any of those points to prod, an env var is wrong — fix before testing
+If any of those points to prod, an env var is wrong. Fix before testing
 anything that mutates state.
 
 ## Manual cron trigger from staging
@@ -156,4 +164,4 @@ curl -X POST -H "Authorization: Bearer $STAGING_CRON_SECRET" \
   https://dev.run.hopsworks.ai/api/cron/check-data-integrity
 ```
 
-`STAGING_CRON_SECRET` value: pull with `vercel env pull --environment=preview .env.preview`.
+`STAGING_CRON_SECRET` value: pull with `vercel env pull --environment=staging .env.staging`.

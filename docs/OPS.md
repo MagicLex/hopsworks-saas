@@ -7,14 +7,14 @@ Production access, deploy, troubleshooting. Not architecture, what you need when
 | Resource | Where | Auth |
 |----------|-------|------|
 | Production app | https://run.hopsworks.ai | Auth0 (admin user with `is_admin=true`) |
-| Staging app | https://dev.run.hopsworks.ai (branch `staging`) | Auth0, isolated DB. See `docs/DEPLOY_STAGING.md` |
+| Staging app | https://dev.run.hopsworks.ai (branch `staging`) | Auth0 (separate app, same tenant). **Shares the prod DB**, see `docs/DEPLOY_STAGING.md` |
 | Admin panel | https://run.hopsworks.ai/admin47392 | Auth0 + DB `is_admin` flag |
 | Vercel project | https://vercel.com (`magiclexs-projects/hopsworks-managed`) | SSO. CLI: `vercel env ls` |
 | Supabase | https://supabase.com → project `pahfsiosiuxdkiebepav`. **Shared between prod and staging** (bridge testing). Pooler conn string in MEMORY.md | SSO |
 | Hopsworks UI admin | https://run.hopsworks.ai (admin login) | Ask Lex for credentials |
 | Cluster `saas-de` (debug) | `kubectl` with debug kubeconfig | AWS Secrets Manager: `Production/OVH/SAAS-DE/Debug-KubeConfig` |
 | Cluster `saas-de` (admin) | Emergency only | AWS Secrets Manager: `Production/OVH/SAAS-DE/ADMIN-KubeConfig` |
-| Cluster `saas-5-test` (Hopsworks 5.0, staging) | API `https://10.112.37.130`, K8s `10.112.37.10:6443` — both RFC1918, OVH VPN required | Kubeconfig in `hopsworks_clusters.kubeconfig` (row name `saas-5-test`, environment `staging`) |
+| Cluster `saas-5-test` (Hopsworks 5.0, staging) | API `https://10.112.37.130`, K8s `10.112.37.10:6443`: both RFC1918, OVH VPN required | Kubeconfig in `hopsworks_clusters.kubeconfig` (row name `saas-5-test`, environment `staging`) |
 | Stripe dashboard | https://dashboard.stripe.com (live mode) | Per-user invite |
 | HubSpot | https://app.hubspot.com | Per-user invite |
 | Auth0 tenant | `dev-fur3a3gej0xmnk7f.eu.auth0.com` | Per-user invite |
@@ -29,7 +29,7 @@ Full cluster reference: `docs/operations/saas-cluster.md`.
 - **Staging**: PR against `staging` branch → Vercel deploys to https://dev.run.hopsworks.ai. DB is **shared** with prod (writes affect real users), but auto-assignment routes new signups to the staging cluster row (`saas-5-test`). Stripe in TEST mode. Full setup: `docs/DEPLOY_STAGING.md`.
 - **Preview (PR)**: every PR gets a Vercel preview URL with the staging env config.
 - **Cluster upgrades**: manual via GitHub Actions on `hopsworks-as-a-service` repo. During upgrades, Hopsworks API calls may fail temporarily; the app logs the failure and continues. Users may show inconsistent state until next sync.
-- **Database migrations**: numbered SQL files in `supabase/migrations/` (`0000_baseline_schema.sql` is the prod baseline dump). New schema changes go in `0002_*.sql` etc. Apply manually via `psql` or Supabase SQL editor — **before** deploying the matching code.
+- **Database migrations**: two directories exist, both active. `supabase/migrations/` holds the baseline dump (`0000_baseline_schema.sql`) plus `0001`–`0003`; `sql/` holds `001`–`013` (billing/metering, still receiving new files). Apply manually via `psql` or Supabase SQL editor, **before** deploying the matching code. Consolidation is tracked in `docs/TODO.md`.
 - **Rollback**: Vercel → Deployments → Promote a previous deployment. Database rollback is manual; check `supabase/migrations/` for the inverse migration before promoting an old build.
 
 ## Cron schedule
@@ -39,12 +39,14 @@ Full cluster reference: `docs/operations/saas-cluster.md`.
 | OpenCost collection | hourly `0 * * * *` | `POST /api/usage/collect-opencost` | `CRON_SECRET` bearer |
 | Stripe meter sync | daily `0 3 * * *` | `POST /api/billing/sync-stripe` | `CRON_SECRET` bearer |
 | Data integrity check | weekly `0 6 * * 1` | `POST /api/cron/check-data-integrity` | `CRON_SECRET` bearer |
+| Billing reconciler | every 30min `*/30 * * * *` | `POST /api/cron/reconcile-billing` | `CRON_SECRET` bearer |
+| Prepaid usage report | monthly `0 7 1 * *` | `POST /api/cron/report-prepaid-usage` | `CRON_SECRET` bearer |
 
 > **Note**: the former `/api/cron/sync-projects` (every 30min) was retired with brief #3. Project state is now reconciled event-driven via the lifecycle webhook receiver. Don't reintroduce a polling cron without first checking that webhook delivery has degraded.
 
 Vercel cron is the fallback. Primary scheduler is Windmill (`https://auto.hops.io`). If both run, the handlers are re-entrant; usage rows upsert on `(user_id, date, hour)`.
 
-All three routes fail-hard with `500` if `CRON_SECRET` is unset — no silent open access. Configured via `vercel env add CRON_SECRET <env>`.
+All routes fail-hard with `500` if `CRON_SECRET` is unset: no silent open access. Configured via `vercel env add CRON_SECRET <env>`.
 
 ## Internal-call auth
 
@@ -73,10 +75,10 @@ Rotate on both sides together; mismatched secrets surface as `401` from the rece
 Mining farms sign up from datacenter IPs with throwaway emails (the 2026-06 batch: one EC2 af-south-1 farm, 9 accounts) to farm free compute. Four gates, all in the signup path:
 
 **Hard blocks before account creation** (403, no `users` row created, stolen cards don't help):
-1. Unverified email — Auth0 `email_verified === false` (database signups must click the verification link; OAuth arrives verified; missing claim passes so SSO is never locked out).
-2. Disposable email domain — `disposable-email-domains` package (~120k domains) + local extras + `EXTRA_BLOCKED_EMAIL_DOMAINS` env (comma-separated, no deploy needed). (`src/lib/signup-abuse.ts`)
-3. IP reuse — signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
-4. Per-IP velocity — third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
+1. Unverified email: Auth0 `email_verified === false` (database signups must click the verification link; OAuth arrives verified; missing claim passes so SSO is never locked out).
+2. Disposable email domain: `disposable-email-domains` package (~120k domains) + local extras + `EXTRA_BLOCKED_EMAIL_DOMAINS` env (comma-separated, no deploy needed). (`src/lib/signup-abuse.ts`)
+3. IP reuse: signup IP matches an account with `metadata.suspension_reason = 'abuse'` (or `deletion_reason = 'abuse'`). Billing suspensions deliberately do NOT match (office-NAT false positive).
+4. Per-IP velocity: third signup from one IP within 24h is refused. Invited team members bypass IP checks (the invite vouches).
 
 **Soft flags after creation** (card-before-free, NOT blocked):
 - Hosting ASN (`src/lib/asn-check.ts`): registration IP's ASN resolved via Team Cymru DNS (`origin.asn.cymru.com`, no API key, fail-open), stored in `users.metadata` (`registration_asn`, `registration_asn_org`, `hosting_asn: true` for ~16 hosting providers).
@@ -94,10 +96,10 @@ Operator notes:
 
 Staging and production share the same Supabase, so `hopsworks_clusters.environment` (`'production' | 'staging'`, default `'production'`) decides where a new signup lands. The filter is applied at:
 
-- `cluster-assignment.ts` — first-signup auto-assignment
-- `usage/collect-opencost.ts` — OpenCost cron (prevents prod cron from `kubectl exec`ing against a staging kubeconfig)
-- `cron/check-data-integrity.ts` — drift check + active-cluster count
-- `admin/usage/check-opencost.ts` — admin debug
+- `cluster-assignment.ts`: first-signup auto-assignment
+- `usage/collect-opencost.ts`: OpenCost cron (prevents prod cron from `kubectl exec`ing against a staging kubeconfig)
+- `cron/check-data-integrity.ts`: drift check + active-cluster count
+- `admin/usage/check-opencost.ts`: admin debug
 
 ID-keyed selects are unchanged; the user's `user_hopsworks_assignments` row already carries the right env via FK. Admin listing endpoints (`/api/admin/clusters`) intentionally show all envs.
 
@@ -122,7 +124,7 @@ Visual cue: red sticky banner at the top of every page when `NEXT_PUBLIC_ENVIRON
 To test the staging cluster path locally:
 
 1. Add `NEXT_PUBLIC_ENVIRONMENT=staging` and `HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET=<value>` to `.env.local`
-2. Connect to OVH VPN (cluster API is RFC1918 — no public ingress)
+2. Connect to OVH VPN (cluster API is RFC1918: no public ingress)
 3. Restart `npm run dev`
 4. **Sign up with a fresh email**. Existing assignments are frozen; switching env doesn't move existing users.
 5. Verify in Supabase:
@@ -137,7 +139,7 @@ To test the staging cluster path locally:
 
 ### Exposing the local SaaS for inbound webhooks (brief #3)
 
-The Hopsworks lifecycle webhook fires **cluster → SaaS**. The staging cluster (`saas-5-test`, RFC1918) has egress internet, so it can reach a public URL — but it cannot reach your laptop's `localhost:3000` directly even on VPN (the VPN routes traffic *to* the cluster, not from it back to your `10.6.0.x` address).
+The Hopsworks lifecycle webhook fires **cluster → SaaS**. The staging cluster (`saas-5-test`, RFC1918) has egress internet, so it can reach a public URL: but it cannot reach your laptop's `localhost:3000` directly even on VPN (the VPN routes traffic *to* the cluster, not from it back to your `10.6.0.x` address).
 
 A quick HTTPS tunnel solves it. Cloudflare's free `trycloudflare.com` quick tunnels need no signup and work in one command.
 
@@ -160,12 +162,12 @@ Configure the cluster (`hopsworks.variables` table or admin Settings UI) with:
 | `LIFECYCLE_WEBHOOK_SECRET` | matches `HOPSWORKS_LIFECYCLE_WEBHOOK_SECRET` in `.env.local` | Rotate on both sides together |
 | `LIFECYCLE_WEBHOOK_CLUSTER_ID` | `saas-5-test` | Matches `hopsworks_clusters.name`; receiver uses it to find the right row |
 
-Empty `LIFECYCLE_WEBHOOK_URL` disables the handler — handy when you're done tunneling.
+Empty `LIFECYCLE_WEBHOOK_URL` disables the handler: handy when you're done tunneling.
 
 Caveats:
 
 - **URL is ephemeral**: every fresh `cloudflared` invocation gives a new hostname. Kill the tunnel (`kill $(cat /tmp/cf-saas.pid)`) and update the cluster setting whenever you re-tunnel.
-- No IP whitelist. The HMAC signature (`X-Hopsworks-Signature: sha256=...`) is what authenticates payloads — never accept events from a tunnel without verifying the HMAC.
+- No IP whitelist. The HMAC signature (`X-Hopsworks-Signature: sha256=...`) is what authenticates payloads: never accept events from a tunnel without verifying the HMAC.
 - Local Next.js must actually be running on `:3000`; the tunnel just proxies, it doesn't start your dev server.
 - The cluster's outbox retries up to 24h with exponential backoff. If you re-tunnel during a stuck delivery, the cluster will eventually catch up.
 
@@ -199,4 +201,4 @@ Detailed playbooks live in `docs/troubleshooting/`. Hopsworks DB direct query: `
 1. Read the Vercel logs.
 2. Read the Hopsworks UI status (run.hopsworks.ai).
 3. Read `docs/troubleshooting/known-issues.md` and `docs/troubleshooting/investigations.md`.
-4. If still stuck, query Supabase directly with the pooler URL in MEMORY.md.
+4. If still stuck, query Supabase directly with the pooler URL (`vercel env pull` → `POSTGRES_URL`).

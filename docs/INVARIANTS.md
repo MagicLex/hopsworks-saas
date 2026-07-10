@@ -57,7 +57,7 @@ Since the EE saas-augmentation deploy, Hopsworks counts active projects and free
 
 ### I-11. `user_projects.namespace` is the hyphenated K8s form
 - **Check**: SQL `select count(*) from user_projects where namespace like '%\_%' and namespace not like '%-%'` should return 0.
-- **Status**: UNVERIFIED in this audit. Last fixed 2025-01-21 (see `known-issues.md` §3). Re-run query before any change to namespace handling.
+- **Status**: UNVERIFIED in this audit. Last fixed 2025-01-21 (HWORKS-2566, hopsworks-ee PR #2780 added the `namespace` field to the admin API). Re-run query before any change to namespace handling.
 
 ### I-12. Team-member project access is in `project_member_roles`, not `user_projects`
 - **Check**: `project-sync.ts` skips users where `account_owner_id IS NOT NULL`.
@@ -71,7 +71,7 @@ Since the EE saas-augmentation deploy, Hopsworks counts active projects and free
 
 ### I-14. `syncUserProjects()` runs before any project-count-dependent decision
 - **Check**: Every code path that reads `user_projects` for billing/downgrade/suspension calls `syncUserProjects(userId)` first.
-- **Status**: PARTIAL. Login (`sync-user.ts`) and admin tools call it. `billing.ts` and `webhooks/stripe.ts` do not yet (tracked in MEMORY pending work). FAIL until those four call sites are added.
+- **Status**: PARTIAL. Login (`sync-user.ts`) and admin tools call it. `billing.ts` and `webhooks/stripe.ts` do not yet (tracked in `docs/TODO.md`, "Billing chain hardening"). FAIL until those four call sites are added.
 
 ### I-15. Stripe meter events sync runs daily without overlap
 - **Check**: Cron schedule `0 3 * * *` in `vercel.json`; handler is short-running and re-entrant.

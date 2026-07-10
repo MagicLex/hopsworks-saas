@@ -1,4 +1,4 @@
-# agent-browser — UI smoke tests on run.hopsworks.ai
+# agent-browser: UI smoke tests on run.hopsworks.ai
 
 `agent-browser` (`/opt/homebrew/bin/agent-browser`) is a headless-browser CLI used to drive the Hopsworks portal end-to-end without Puppeteer/Playwright boilerplate. It keeps a persistent browser session between commands. Reach for it when a DB trace isn't enough and you need to see what a real user sees.
 
@@ -15,7 +15,7 @@ agent-browser fill "@eN" "text"   # fill input by ref
 agent-browser scrollintoview "@eN"
 ```
 
-Auth0 and dynamic pages re-render on submit, so `snapshot` refs change between steps — re-snapshot after each navigation.
+Auth0 and dynamic pages re-render on submit, so `snapshot` refs change between steps. Re-snapshot after each navigation.
 
 ## Pattern: fresh signup (password auth)
 
@@ -29,7 +29,7 @@ PASS="TestX${TS}!x"
 agent-browser open "https://run.hopsworks.ai/"
 agent-browser wait 2000
 
-# Click "Sign Up" (ref varies — grep snapshot)
+# Click "Sign Up" (ref varies, grep snapshot)
 REF=$(agent-browser snapshot | grep '"Sign Up"' | grep -oE 'ref=e[0-9]+' | head -1 | cut -d= -f2)
 agent-browser click "@$REF"
 agent-browser wait 3000
@@ -57,7 +57,7 @@ agent-browser wait 8000
 # lands on /billing-setup
 ```
 
-Gotcha: the email+password submit sometimes needs a second click after password rules panel appears. Scroll into view first, then click. Don't re-fill the password — it's still there, just hidden.
+Gotcha: the email+password submit sometimes needs a second click after password rules panel appears. Scroll into view first, then click. Don't re-fill the password: it's still there, just hidden.
 
 ## Pattern: re-login (existing password user)
 
@@ -85,7 +85,7 @@ agent-browser eval "window.location.href"   # verify redirect target
 
 ## Pattern: cleanup after test
 
-Always delete the row — don't leave noise in prod DB. Auth0 side can stay (cheap, no impact).
+Always delete the row, don't leave noise in prod DB. Auth0 side can stay (cheap, no impact).
 
 ```bash
 psql "$SUPABASE_POOLER" -c "DELETE FROM users WHERE email='$EMAIL';"
